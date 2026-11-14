@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "statcompute"
-version = "0.2.0"
+version = "0.3.0"
 description = "Estimator-preserving computation for classical statistical models: prototypes, validation and benchmarks"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24"]
 

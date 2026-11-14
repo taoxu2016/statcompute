@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from .. import __version__, adapters, references
 from ..testkit import DatasetSpec, ModelSpec, materialize
 from . import environment
-from .metrics import ProcessSampler, SparkMetrics
+from .metrics import ExecutorSampler, ProcessSampler, SparkMetrics
 
 SCHEMA_VERSION = 1
 PLANS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plans")
@@ -71,7 +71,7 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
                                                        "rows": dataset.rows, "events": dataset.manifest.get("events"),
                                                        "checksum": dataset.manifest.get("checksum")},
         "model": dict(model.to_dict(), label=model.label()),
-        "support": None, "status": None, "error": None, "caveats": [], "memory_guard": None,
+        "support": None, "status": None, "error": None, "caveats": [], "memory_guard": None, "warmup": None,
         "environment": None, "timing": None, "spark": None, "process": None, "fit": None, "truth": None,
     }
 
@@ -109,6 +109,10 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
     sc = spark.sparkContext
     group = f"statcompute-{run_id}"
     metrics = SparkMetrics(spark)
+    if options.get("hold_executors") and adapter.kind == "spark":
+        # an autoscaling cluster: ask for its full size before the clock starts
+        record["warmup"] = environment.hold_at(spark, int(options["hold_executors"]),
+                                               float(options.get("hold_timeout_s", 900)))
     before = environment.moving(spark)
     timed_out = threading.Event()
     timer = None
@@ -125,7 +129,8 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         checkpoint(dict(record, status="running"))
     fit, error = None, None
     started = time.perf_counter()
-    with ProcessSampler() as sampler:
+    watch = ExecutorSampler(lambda: environment.attached(spark), float(options.get("executor_sample_s", 5)))
+    with ProcessSampler() as sampler, watch:
         try:
             fit = adapter.fit(spark, dataset, model)
         except BaseException as failure:  # a failed fit is a result; record it and go on
@@ -143,14 +148,19 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
     after = environment.moving(spark)
     time.sleep(0.5)                      # let the listener bus deliver the last stage's completion
     spark_metrics = metrics.collect(group)
+    during = watch.result() or {}
+    moved = (before.get("executors") != after.get("executors")
+             or during.get("executors_min") != during.get("executors_max"))
     if spark_metrics is not None and wall > 0:
         cores = after.get("cores") or before.get("cores")
+        if during.get("cores_time_average"):
+            spark_metrics["share_of_attached_cores"] = (
+                spark_metrics["executor_run_s"] / wall / during["cores_time_average"])
         spark_metrics["effective_cores_by_run_time"] = spark_metrics["executor_run_s"] / wall
         spark_metrics["effective_cores_by_cpu_time"] = spark_metrics["executor_cpu_s"] / wall
         spark_metrics["cpu_utilization"] = None if not cores else spark_metrics["executor_cpu_s"] / (wall * cores)
     record.update(
-        environment={"static": info, "before": before, "after": after,
-                     "cluster_changed": before.get("executors") != after.get("executors")},
+        environment={"static": info, "before": before, "after": after, "during": during, "cluster_changed": moved},
         timing={"wall_s": wall, "phases": {} if fit is None else fit.phases},
         spark=spark_metrics, process=sampler.result(wall),
     )
@@ -161,8 +171,13 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
             pass
     gc.collect()
     caveats = [] if fit is None else list(fit.caveats)
-    if record["environment"]["cluster_changed"]:
-        caveats.append("the cluster changed size during the fit")
+    if moved:
+        low, high = during.get("executors_min"), during.get("executors_max")
+        caveats.append("the cluster changed size during the fit" if low == high or low is None
+                       else f"executors ranged from {low} to {high} during the fit")
+    warm = record.get("warmup") or {}
+    if warm.get("reached") is not None and warm["reached"] < warm["target"]:
+        caveats.append(f"the cluster had {warm['reached']} of {warm['target']} executors when the fit started")
     if record["adapter"].get("matches_pin") is False:
         caveats.append("the installed build is not the commit pinned in REFERENCES.lock")
     record["caveats"] = caveats

@@ -5,7 +5,7 @@ independent workspace of the project: new algorithms are tried here, the existin
 are benchmarked here on equal terms, and the next Spark implementation of provider profiling will
 be built here.
 
-**Status, version 0.2.0 (2026-11-14).** The benchmark framework, adapters for the three reference
+**Status, version 0.3.0 (2026-11-14).** The benchmark framework, adapters for the three reference
 packages, two prototypes of the recommended algorithms and the documentation exist and pass their
 tests in a local Spark 4.0 session. Nothing has run on Databricks yet, and the new engine is not
 started. `STATUS.md` has the details; `docs/databricks-runbook.md` is the next thing to do.
@@ -37,7 +37,7 @@ started. `STATUS.md` has the details; `docs/databricks-runbook.md` is the next t
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 26 tests, about two minutes
+pytest -q                                     # 29 tests, about two minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```
@@ -63,3 +63,5 @@ then the `smoke` plan through `01_generate`, `02_run` and `03_report`, then the 
 | `docs/databricks-runbook.md` | Running the benchmarks on the standard cluster |
 | `docs/research/` | The research roadmap and its evidence |
 | `STATUS.md`, `DECISIONS.md`, `OPEN_ITEMS.md` | State of the work; decisions proposed and taken; what is open |
+
+Licence: MIT, see `LICENSE`.

@@ -7,7 +7,7 @@ from ..validation import compare_records
 from .results import summary, to_markdown
 
 TIMING = ["model", "rows", "features", "design", "adapter", "role", "status", "wall_s", "fit_s", "iterations",
-          "executors", "tasks", "effective_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
+          "executors", "tasks", "effective_cores", "share_of_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
           "driver_peak_rss_gb", "cluster_changed", "caveats", "note"]
 AGREEMENT = ["dataset", "model", "adapter", "reference", "like_for_like", "max_abs_coefficient_difference",
              "max_coefficient_difference_in_se", "max_rel_se_difference", "rel_log_likelihood_difference",

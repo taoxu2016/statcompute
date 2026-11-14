@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-11-14, version 0.2.0 (round 2: hardening before the first cluster run).
+Updated 2026-11-14, version 0.3.0 (round 3: licence; support for an autoscaling cluster).
 
 ## What exists
 
@@ -15,12 +15,13 @@ Updated 2026-11-14, version 0.2.0 (round 2: hardening before the first cluster r
 | `pprof_spark` adapter | Written; run against a mock only | `tests/test_runner.py`; no JARs in the sandbox (OI-04) |
 | Runner, metrics, records, report, command line | Done | `tests/test_runner.py`; plans `smoke` and `laptop` run end to end |
 | Round 2 safeguards: `running` checkpoint, scrubbed records, caveats, task metrics from the status store when the REST API is closed | Done | Three tests in `tests/test_runner.py` |
+| Autoscaling support: `hold_executors` warm-up, executors sampled during each fit, caveats | Done locally | Three tests in `tests/test_runner.py`; untried on a real autoscaling cluster (OI-02) |
 | Databricks notebooks | Written; not run | They parse; no cluster was available |
 | New engine | Not started | `engine/README.md` |
 
 All of the above ran in one sandbox: Python 3.12, PySpark 4.0.1 in local mode, R 4.3.3, one core;
 pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned commits. 26 tests
-pass in about 80 seconds.
+pass in about 80 seconds (29 since round 3).
 
 ## What has not happened
 

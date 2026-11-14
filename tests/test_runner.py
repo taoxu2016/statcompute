@@ -149,3 +149,39 @@ def test_a_fit_that_kills_the_process_would_leave_a_running_record(spark, tmp_pa
     final = load_records(str(tmp_path / "results"))
     assert [r["status"] for r in final] == ["ok"] and final[0]["scrubbed"] and final[0]["caveats"] == ["a test caveat"]
     assert record["memory_guard"] is None and summary(final)[0]["caveats"] == "a test caveat"
+
+
+def test_the_executor_sampler_reports_what_was_attached():
+    import time
+
+    from statcompute.bench.metrics import ExecutorSampler
+
+    readings = iter([(4, 16), (4, 16), (10, 40), (10, 40), (10, 40), (10, 40), (10, 40), (10, 40)])
+    with ExecutorSampler(lambda: next(readings), interval=0.05) as watch:
+        time.sleep(0.22)
+    out = watch.result()
+    assert out["executors_min"] == 4 and out["executors_max"] == 10 and out["cores_min"] == 16 and out["cores_max"] == 40
+    assert 16 < out["cores_time_average"] < 40 and out["samples"] >= 3
+    assert [c[1:] for c in out["changes"]] == [[4, 16], [10, 40]]
+
+
+def test_holding_a_cluster_at_size_runs_tasks_until_the_target_or_the_timeout(spark):
+    from statcompute.bench import environment
+
+    assert environment.hold_at(spark, 10)["skipped"] == "local session"
+    assert environment.attached(spark) == (0, spark.sparkContext.defaultParallelism)
+    out = environment.hold_at(spark, 1, timeout_s=1.0, task_seconds=0.05, allow_local=True)   # a local session never gets there
+    assert out["target"] == 1 and out["reached"] == 0 and out["rounds"] >= 1
+
+
+def test_a_run_says_how_many_executors_it_had_and_flags_a_short_cluster(spark, tmp_path, monkeypatch):
+    from statcompute.bench import environment
+
+    monkeypatch.setattr(environment, "hold_at", lambda spark, executors, timeout: {"target": executors, "reached": 4, "seconds": 1.0, "rounds": 2})
+    plan = dict(PLAN, adapters=["lab_spark"], options={"hold_executors": 10})
+    record = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))[0]
+    assert record["status"] == "ok" and record["warmup"]["reached"] == 4
+    assert record["caveats"] == ["the cluster had 4 of 10 executors when the fit started"]
+    during = record["environment"]["during"]
+    assert during["executors_min"] == during["executors_max"] == 0 and during["cores_time_average"] > 0
+    assert record["environment"]["cluster_changed"] is False

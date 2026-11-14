@@ -30,6 +30,8 @@ def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         spark, process, fit = r.get("spark") or {}, r.get("process") or {}, r.get("fit") or {}
         env = r.get("environment") or {}
         after = env.get("after") or {}
+        during = env.get("during") or {}
+        low, high = during.get("executors_min"), during.get("executors_max")
         rows.append({
             "model": r["model"]["label"], "rows": spec["rows"], "providers": spec["providers"],
             "features": spec["features"], "design": spec["design"],
@@ -38,7 +40,10 @@ def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "fit_s": None if "fit" not in (timing.get("phases") or {}) else round(timing["phases"]["fit"], 2),
             "iterations": fit.get("iterations"), "converged": fit.get("converged"),
             "max_abs_z": None if not r.get("truth") or r["truth"]["max_abs_z"] is None else round(r["truth"]["max_abs_z"], 2),
-            "executors": after.get("executors"), "cores": after.get("cores"),
+            "executors": after.get("executors") if low == high or low is None else f"{low}-{high}",
+            "cores": after.get("cores"),
+            "share_of_cores": None if spark.get("share_of_attached_cores") is None
+            else round(spark["share_of_attached_cores"], 2),
             "cluster_changed": env.get("cluster_changed"),
             "tasks": spark.get("tasks"),
             "effective_cores": None if spark.get("effective_cores_by_run_time") is None

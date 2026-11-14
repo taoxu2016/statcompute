@@ -9,10 +9,38 @@ problems; send the error text back and it gets fixed.
 
 | Setting | Value | Why |
 |---|---|---|
-| Workers | 10, fixed; autoscaling off | Timings are meaningless on a cluster that changes size |
+| Workers | 10. Fixed if you can: clear Enable autoscaling, or set the minimum equal to the maximum. Otherwise see "If the cluster autoscales" | A timing on a cluster that changes size measures the autoscaler as much as the code |
 | Access mode | Dedicated (single user) | pprof_spark's Python wrappers need py4j |
 | Runtime | 17.3 LTS | The target of this project (D-03) |
 | Photon | Off, or noted | pprof_spark runs typed Dataset code, which Photon does not execute |
+
+### If the cluster autoscales
+
+Workers that arrive after a fit has started come without its cached data, and Databricks' optimized
+autoscaling can also remove workers while a job is running. Either makes a timing unrepresentative.
+
+1. Preferred: fix the size for the test window (10 workers, autoscaling off, or minimum = maximum).
+   A compute policy may not let you; then:
+2. Set the widget `hold_executors` to 10 in `02_run`. Before each Spark fit the runner submits rounds
+   of sleeping tasks until 10 executors are attached, for at most 15 minutes, and only then starts
+   the clock. It cannot stop the autoscaler from removing workers later.
+3. Either way, every record says what the fit actually had: `environment.during` holds the smallest
+   and largest executor count, the time-averaged cores and each change, and the report's
+   `share_of_cores` is executor run time over wall time and average attached cores. A run whose
+   count moved gets a caveat. Such a run is still a useful diagnostic (it shows directly how much of
+   a slow fit is the cluster arriving late) but it is not a baseline timing.
+
+None of this has been tried on a real autoscaling cluster yet (OI-02).
+
+### Which driver
+
+The plans are for the standard cluster with the 32 GB driver. The cluster with the 128 GB driver is
+for the single-machine packages at sizes the small driver cannot hold: attach `02_run` to it with
+plan `standard`, `adapters` = `pprof_py,pprof_r,lab_numpy`, `max_rows` = 5000000, and the same
+`data_root` and `results_root`. The datasets are shared, so those runs are compared with the Spark
+runs on identical tables. Nothing else depends on the larger driver.
+
+### Code and folders
 
 Add https://github.com/taoxu2016/statcompute as a Git folder in the workspace. Choose two folders:
 
@@ -87,8 +115,6 @@ Repeat stage E with `max_rows` = 20000000, then 50000000, then 100000000.
 These are arithmetic, not measurements. The two largest sizes are there to find the limits, and a
 run that fails or times out is a result.
 
-The 128 GB driver may be used to run pprof_py or pprof (R) at sizes the 32 GB driver cannot hold,
-as extra references. Nothing in the plans depends on it.
 
 ## What comes back
 

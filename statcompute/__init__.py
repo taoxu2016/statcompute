@@ -7,4 +7,4 @@ Sub-packages, one per area of the repository (docs/architecture.md):
   validation   numerical comparison of fits
   bench        scale and performance harness
 """
-__version__ = "0.2.0"
+__version__ = "0.3.0"

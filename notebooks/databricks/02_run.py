@@ -18,6 +18,7 @@ dbutils.widgets.text("max_rows", "5000000", "Largest dataset to run now (rows)")
 dbutils.widgets.text("families", "", "Model families, comma-separated (empty: both)")
 dbutils.widgets.dropdown("cache_input", "false", ["false", "true"], "Cache the input table before pprof_spark fits")
 dbutils.widgets.text("lab_rows_per_partition", "", "Rows per partition for lab_spark (empty: 50000)")
+dbutils.widgets.text("hold_executors", "", "On an autoscaling cluster: executors to ask for before each Spark fit (empty: none)")
 
 # COMMAND ----------
 
@@ -33,6 +34,8 @@ plan = load_plan(dbutils.widgets.get("plan").strip())
 plan.setdefault("options", {})["cache_input"] = dbutils.widgets.get("cache_input") == "true"
 if dbutils.widgets.get("lab_rows_per_partition").strip():
     plan["options"]["lab_rows_per_partition"] = int(float(dbutils.widgets.get("lab_rows_per_partition")))
+if dbutils.widgets.get("hold_executors").strip():
+    plan["options"]["hold_executors"] = int(float(dbutils.widgets.get("hold_executors")))
 records = run_plan(
     spark, plan, data_root, results_root,
     only_adapters=split(dbutils.widgets.get("adapters")),

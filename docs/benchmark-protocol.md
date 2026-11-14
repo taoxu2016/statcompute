@@ -6,7 +6,7 @@ What is run, under which conditions, what is measured, and what may be concluded
 
 | Condition | Requirement | Checked by |
 |---|---|---|
-| Cluster size | Fixed for the whole plan: no autoscaling | Notebook `00_environment`; every record compares executors before and after and sets `cluster_changed` |
+| Cluster size | Fixed for the whole plan where that is possible. On an autoscaling cluster the option `hold_executors` asks for full size before each Spark fit | Notebook `00_environment`; every record samples the executors attached during its fit (`environment.during`) and sets `cluster_changed` and a caveat when the count moved |
 | Standard cluster | 32 GB driver; 10 workers of 16 GB; Databricks Runtime 17.3 LTS | Recorded in every record |
 | Access mode | Dedicated (single user): pprof_spark's Python wrappers need py4j | `00_environment` |
 | Data | The stored synthetic table named in the record, with its checksum | Manifest |

@@ -24,7 +24,8 @@ if not (dbx.get("runtime") or "").startswith("17.3"):
     notes.append(f"runtime is {dbx.get('runtime')}; the standard cluster is 17.3 LTS (Apache Spark 4.0.0)")
 if (dbx.get("scaling_type") or "").lower().startswith("auto") or (
         dbx.get("min_workers") and dbx.get("max_workers") and dbx["min_workers"] != dbx["max_workers"]):
-    problems.append("the cluster autoscales: timings need a fixed number of workers")
+    notes.append("the cluster autoscales: fix its size if you can (min = max); otherwise set hold_executors in 02_run, "
+                 "which asks for full size before each Spark fit. Every record shows the executors attached during its fit")
 probe = SparkMetrics(spark)
 if probe._get("executors") is not None:
     notes.append("task metrics: from the Spark UI's REST API")

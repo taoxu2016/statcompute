@@ -218,3 +218,63 @@ class ProcessSampler:
         return {"peak_rss_bytes": int(self.peak_rss), "peak_rss_with_children_bytes": int(self.peak_tree),
                 "cpu_s": self.cpu_s, "cores": cores,
                 "cpu_utilization": None if not self.cpu_s or wall_s <= 0 else self.cpu_s / (wall_s * cores)}
+
+
+class ExecutorSampler:
+    """Executors and cores attached between enter and exit, sampled on a thread. On an autoscaling
+    cluster this is what says how much of the cluster a fit actually had. `probe` returns
+    (executors, cores)."""
+
+    def __init__(self, probe, interval: float = 5.0):
+        self._probe, self.interval = probe, interval
+        self._samples: List[Any] = []
+        self.changes: List[Any] = []
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _take(self):
+        try:
+            executors, cores = self._probe()
+        except Exception:
+            return
+        at = time.perf_counter() - self._started
+        self._samples.append((at, executors, cores))
+        if (not self.changes or self.changes[-1][1:] != [executors, cores]) and len(self.changes) < 200:
+            self.changes.append([round(at, 1), executors, cores])
+
+    def _loop(self):
+        while not self._stop.wait(self.interval):
+            self._take()
+
+    def __enter__(self):
+        self._started = time.perf_counter()
+        self._take()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._thread.join(timeout=5)
+        self._take()
+        return False
+
+    def result(self) -> Optional[Dict[str, Any]]:
+        if not self._samples:
+            return None
+        executors = [s[1] for s in self._samples if s[1] is not None]
+        cores = [s[2] for s in self._samples if s[2] is not None]
+        span = self._samples[-1][0] - self._samples[0][0]
+        average = None
+        if cores:
+            pairs = [(a, b) for a, b in zip(self._samples, self._samples[1:]) if a[2] is not None]
+            average = (sum(a[2] * (b[0] - a[0]) for a, b in pairs) / span) if span > 0 and pairs else float(cores[0])
+        return {
+            "samples": len(self._samples),
+            "executors_min": min(executors) if executors else None,
+            "executors_max": max(executors) if executors else None,
+            "cores_min": min(cores) if cores else None,
+            "cores_max": max(cores) if cores else None,
+            "cores_time_average": average,
+            "changes": self.changes,           # [seconds into the fit, executors, cores] at each change
+        }

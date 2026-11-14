@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import time
 from typing import Any, Dict, Optional
 
 from .metrics import SparkMetrics
@@ -77,3 +78,36 @@ def moving(spark) -> Dict[str, Any]:
     out = executors(spark)
     out["default_parallelism"] = spark.sparkContext.defaultParallelism
     return out
+
+
+def attached(spark):
+    """(executors, cores) attached right now, from the scheduler: cheap enough to sample."""
+    sc = spark.sparkContext
+    try:
+        executors = int(sc._jsc.sc().getExecutorMemoryStatus().size()) - 1
+    except Exception:
+        executors = None
+    return executors, sc.defaultParallelism
+
+
+def hold_at(spark, executors: int, timeout_s: float = 900.0, task_seconds: float = 15.0,
+            allow_local: bool = False) -> Dict[str, Any]:
+    """Ask an autoscaling cluster for `executors` workers and wait until they are attached.
+
+    The autoscaler adds workers when tasks are waiting, so this submits rounds of sleeping tasks,
+    many more than there are cores, until the count is reached or the time is up. It cannot stop the
+    autoscaler from removing workers later; the runner samples the count during every fit for that.
+    """
+    sc = spark.sparkContext
+    out = {"target": int(executors), "reached": None, "seconds": 0.0, "rounds": 0}
+    if sc.master.startswith("local") and not allow_local:
+        return dict(out, skipped="local session")
+    started = time.perf_counter()
+    current = attached(spark)[0]
+    while (current is None or current < executors) and time.perf_counter() - started < timeout_s:
+        tasks = max(8 * int(executors), 2 * sc.defaultParallelism)
+        sc.setJobGroup("statcompute-warmup", f"asking the autoscaler for {executors} executors")
+        sc.parallelize(range(tasks), tasks).foreach(lambda _, s=task_seconds: __import__("time").sleep(s))
+        out["rounds"] += 1
+        current = attached(spark)[0]
+    return dict(out, reached=current, seconds=time.perf_counter() - started)
