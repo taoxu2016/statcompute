@@ -40,6 +40,7 @@ class FitResult:
     settings: Dict[str, Any] = field(default_factory=dict)   # options actually passed to the implementation
     phases: Dict[str, float] = field(default_factory=dict)   # seconds, measured inside the adapter
     extras: Dict[str, Any] = field(default_factory=dict)
+    caveats: List[str] = field(default_factory=list)         # anything that makes this run's timing unrepresentative
 
 
 class Adapter:
@@ -48,6 +49,7 @@ class Adapter:
     name = "abstract"
     kind = "driver"
     role = "reference"
+    options: Dict[str, Any] = {}     # the plan's options, set by the runner before each fit
 
     def describe(self, spark=None) -> Dict[str, Any]:
         """Name, version and commit of the implementation as found in this session."""

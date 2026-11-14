@@ -126,7 +126,7 @@ def partition_kernel(family: str, p: int, beta: List[float]):
 
 class LabSpark(Adapter):
     name, kind, role = "lab_spark", "spark", "prototype"
-    rows_per_partition = 100_000
+    rows_per_partition = 50_000
 
     def describe(self, spark=None):
         return {"name": self.name, "kind": self.kind, "role": self.role, "version": __version__,
@@ -144,8 +144,8 @@ class LabSpark(Adapter):
         names, p, tol = spec.feature_names(), spec.features, _tolerance(model)
         started = clock.perf_counter()
         frame = dataset.frame(spark)
-        partitions = min(20_000, max(spark.sparkContext.defaultParallelism,
-                                     math.ceil(dataset.rows / self.rows_per_partition)))
+        per_partition = int(self.options.get("lab_rows_per_partition") or self.rows_per_partition)
+        partitions = min(20_000, max(spark.sparkContext.defaultParallelism, math.ceil(dataset.rows / per_partition)))
         x = F.array(*[F.col(c) for c in names]).alias("x")
         if model.family == COX:
             work = (frame.select("provider", x, "time", "event").repartition(partitions, "provider")

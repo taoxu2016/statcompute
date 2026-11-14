@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "run_id": "63a209219f814dce",
+ "run_id": "d643db742c5142d8",
  "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:19:21+00:00",
- "finished_at": "2026-11-14T17:19:24+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:11+00:00",
+ "finished_at": "2026-11-14T17:54:15+00:00",
  "adapter": {
   "name": "pprof_r",
   "kind": "driver",
@@ -19,9 +19,9 @@
   "matches_pin": null
  },
  "dataset": {
-  "id": "logistic_fe-n20000-m40-p6-simple-s79-ae3990f696",
+  "id": "cox-n20000-m40-p6-simple-s79-84f2b136f2",
   "spec": {
-   "family": "logistic_fe",
+   "family": "cox",
    "rows": 20000,
    "providers": 40,
    "features": 6,
@@ -34,29 +34,34 @@
    "generator_version": 1
   },
   "rows": 20000,
-  "events": 6236,
-  "checksum": -1432340022735956370
+  "events": 8626,
+  "checksum": 3380788494082136481
  },
  "model": {
-  "family": "logistic_fe",
+  "family": "cox",
   "ties": "breslow",
   "strata": "provider",
   "convergence": "tight",
   "max_iterations": null,
-  "label": "logistic_fe/tight"
+  "label": "cox/stratified/breslow/tight"
  },
  "support": {
   "status": "exact",
   "notes": [
-   "SerBIN on one thread; stops when the largest change in beta is below tol (default 1e-5); provider effects are bounded at the median +/- 10"
+   "fits through survival::coxph, whose stopping rule fit_cox() does not expose: relative change in the log partial likelihood below 1e-9, at most 20 iterations"
   ]
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 4800000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676725963",
+   "application_id": "local-1794678824932",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -107,57 +112,58 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 1.898884004000024,
+  "wall_s": 2.1279833149999945,
   "phases": {
-   "load": 0.3786241909999717,
-   "export": 0.1301215230000139,
-   "r_read": 0.02200000000000002,
-   "r_prepare": 0.010999999999999899,
-   "fit": 0.019000000000000128
+   "load": 0.3988794620000249,
+   "export": 0.16527023499997995,
+   "r_read": 0.030000000000000027,
+   "r_prepare": 0.010000000000000009,
+   "fit": 0.123
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.148,
-  "executor_cpu_s": 0.026445624,
-  "gc_s": 0.014,
+  "executor_run_s": 0.137,
+  "executor_cpu_s": 0.033940849,
+  "gc_s": 0.0,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 1396050,
+  "result_bytes": 1559408,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 63,
+    "stage": 28,
     "tasks": 2,
-    "median_task_s": 0.072,
-    "p95_task_s": 0.072,
-    "max_task_s": 0.072,
+    "median_task_s": 0.066,
+    "p95_task_s": 0.066,
+    "max_task_s": 0.066,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 62,
+    "stage": 27,
     "tasks": 1,
-    "median_task_s": 0.017,
-    "p95_task_s": 0.017,
-    "max_task_s": 0.017,
+    "median_task_s": 0.006,
+    "p95_task_s": 0.006,
+    "max_task_s": 0.006,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.07794051647611758,
-  "effective_cores_by_cpu_time": 0.013926929683062233,
-  "cpu_utilization": 0.006963464841531116
+  "effective_cores_by_run_time": 0.0643802040336958,
+  "effective_cores_by_cpu_time": 0.015949772143772703,
+  "cpu_utilization": 0.007974886071886352
  },
  "process": {
-  "peak_rss_bytes": 302157824,
-  "peak_rss_with_children_bytes": 1490837504,
-  "cpu_s": 1.419999999999999,
+  "peak_rss_bytes": 297779200,
+  "peak_rss_with_children_bytes": 1451294720,
+  "cpu_s": 1.4799999999999995,
   "cores": 1,
-  "cpu_utilization": 0.7478076580816682
+  "cpu_utilization": 0.695494174962553
  },
  "fit": {
   "feature_names": [
@@ -169,42 +175,40 @@
    "x6"
   ],
   "coefficients": [
-   -0.1761897529360789,
-   0.23939267346612245,
-   -0.21130935383503274,
-   0.17988111950036487,
-   -0.22038939899922963,
-   0.25821402170727376
+   -0.24578221275703113,
+   0.21410214887981874,
+   -0.2042299816818747,
+   0.18148242039674048,
+   -0.16633966577734144,
+   0.19637443527902937
   ],
   "standard_errors": [
-   0.026787749336231834,
-   0.033402643398703455,
-   0.026836757195347845,
-   0.033543333911195954,
-   0.02688226655781676,
-   0.03364059317807251
+   0.01863062762975112,
+   0.02304868034088421,
+   0.01861502368574449,
+   0.023031462703398863,
+   0.018654380422729242,
+   0.02314429959308237
   ],
-  "log_likelihood": -12038.643436874148,
-  "iterations": 5,
+  "log_likelihood": -47167.27164078657,
+  "iterations": 3,
   "converged": true,
   "settings": {
-   "algorithm": "SerBIN",
-   "tol": 1e-12,
-   "max_iter": 10000,
-   "bound": 10,
-   "stop": "beta",
-   "threads": 1,
-   "cutoff": 0
+   "strata": "provider",
+   "ties": "breslow",
+   "cutoff": 0,
+   "stopping": "survival::coxph defaults"
   },
   "extras": {
-   "peak_r_mb": 160.8,
+   "peak_r_mb": 176.8,
    "r_version": "4.3.3",
    "pprof_version": "2.0.12",
    "survival_version": "3.5.8"
   }
  },
  "truth": {
-  "max_abs_z": 1.607875229459357,
+  "max_abs_z": 2.235999148980688,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

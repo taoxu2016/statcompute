@@ -1,28 +1,23 @@
 {
  "schema": 1,
- "run_id": "d38a9c03652d4196",
+ "run_id": "307911142561431f",
  "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:19:20+00:00",
- "finished_at": "2026-11-14T17:19:21+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:15+00:00",
+ "finished_at": "2026-11-14T17:54:17+00:00",
  "adapter": {
-  "name": "pprof_py",
+  "name": "lab_numpy",
   "kind": "driver",
-  "role": "reference",
-  "version": "0.7.0",
-  "numba": "0.68.1",
+  "role": "prototype",
+  "version": "0.2.0",
   "numpy": "2.5.4",
-  "pinned": {
-   "commit": "94b5476398da262987b97ac6fec3bbb91b048731",
-   "version": "0.7.0"
-  },
-  "matches_pin": null
+  "algorithm": "weighted-Gram Cox; profile-likelihood logistic"
  },
  "dataset": {
-  "id": "logistic_fe-n20000-m40-p6-simple-s79-ae3990f696",
+  "id": "cox-n20000-m40-p6-simple-s79-84f2b136f2",
   "spec": {
-   "family": "logistic_fe",
+   "family": "cox",
    "rows": 20000,
    "providers": 40,
    "features": 6,
@@ -35,29 +30,34 @@
    "generator_version": 1
   },
   "rows": 20000,
-  "events": 6236,
-  "checksum": -1432340022735956370
+  "events": 8626,
+  "checksum": 3380788494082136481
  },
  "model": {
-  "family": "logistic_fe",
+  "family": "cox",
   "ties": "breslow",
   "strata": "provider",
   "convergence": "tight",
   "max_iterations": null,
-  "label": "logistic_fe/tight"
+  "label": "cox/stratified/breslow/tight"
  },
  "support": {
   "status": "exact",
   "notes": [
-   "SerBIN; stops when the largest change in beta is below tol; provider effects are bounded at the median +/- 10"
+   "stops when the next Newton step is below the tolerance in standard errors (T_CONV)"
   ]
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 10752000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676725963",
+   "application_id": "local-1794678824932",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -108,54 +108,55 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 0.4531728649999991,
+  "wall_s": 0.5329606309999804,
   "phases": {
-   "load": 0.4024507810000273,
-   "fit": 0.047004574999959914
+   "load": 0.41483124600000565,
+   "fit": 0.11169782600001099
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.156,
-  "executor_cpu_s": 0.039459324,
-  "gc_s": 0.0,
+  "executor_run_s": 0.144,
+  "executor_cpu_s": 0.031076288,
+  "gc_s": 0.014,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 1395964,
+  "result_bytes": 1559494,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 61,
+    "stage": 30,
     "tasks": 2,
-    "median_task_s": 0.075,
-    "p95_task_s": 0.075,
-    "max_task_s": 0.075,
+    "median_task_s": 0.071,
+    "p95_task_s": 0.071,
+    "max_task_s": 0.071,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 60,
+    "stage": 29,
     "tasks": 1,
-    "median_task_s": 0.006,
-    "p95_task_s": 0.006,
-    "max_task_s": 0.006,
+    "median_task_s": 0.008,
+    "p95_task_s": 0.008,
+    "max_task_s": 0.008,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.3442394989823592,
-  "effective_cores_by_cpu_time": 0.08707344823040117,
-  "cpu_utilization": 0.043536724115200584
+  "effective_cores_by_run_time": 0.27018881250162224,
+  "effective_cores_by_cpu_time": 0.05830878716443344,
+  "cpu_utilization": 0.02915439358221672
  },
  "process": {
-  "peak_rss_bytes": 300187648,
-  "peak_rss_with_children_bytes": 1291272192,
-  "cpu_s": 0.04999999999999982,
+  "peak_rss_bytes": 302235648,
+  "peak_rss_with_children_bytes": 1241731072,
+  "cpu_s": 0.0699999999999994,
   "cores": 1,
-  "cpu_utilization": 0.11033317275075577
+  "cpu_utilization": 0.13134178385495415
  },
  "fit": {
   "feature_names": [
@@ -167,36 +168,36 @@
    "x6"
   ],
   "coefficients": [
-   -0.17618975293608774,
-   0.23939267346613183,
-   -0.2113093538350427,
-   0.1798811195003713,
-   -0.22038939899923746,
-   0.25821402170728414
+   -0.2457822127569247,
+   0.2141021488586286,
+   -0.20422998168253126,
+   0.18148242038973744,
+   -0.16633966577735718,
+   0.19637443526456239
   ],
   "standard_errors": [
-   0.02678774933623244,
-   0.03340264339870419,
-   0.02683675719534837,
-   0.03354333391119664,
-   0.026882266557817364,
-   0.03364059317807331
+   0.018630627629750998,
+   0.023048680340967336,
+   0.0186150236857435,
+   0.02303146270342671,
+   0.018654380422726425,
+   0.02314429959314111
   ],
-  "log_likelihood": -12038.643436874148,
-  "iterations": 5,
-  "converged": null,
+  "log_likelihood": -47167.27164078673,
+  "iterations": 4,
+  "converged": true,
   "settings": {
-   "tol": 1e-12,
-   "bound": 10.0,
-   "backtrack": true
+   "tol_step_in_se": 1e-10
   },
   "extras": {
-   "providers": 40,
-   "excluded_providers": 0
+   "blocks": 1,
+   "evaluations": 5,
+   "newton_step_in_se": 3.1515309072947855e-13
   }
  },
  "truth": {
-  "max_abs_z": 1.6078752294596275,
+  "max_abs_z": 2.2359991489749893,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

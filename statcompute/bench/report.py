@@ -8,7 +8,7 @@ from .results import summary, to_markdown
 
 TIMING = ["model", "rows", "features", "design", "adapter", "role", "status", "wall_s", "fit_s", "iterations",
           "executors", "tasks", "effective_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
-          "driver_peak_rss_gb", "cluster_changed", "note"]
+          "driver_peak_rss_gb", "cluster_changed", "caveats", "note"]
 AGREEMENT = ["dataset", "model", "adapter", "reference", "like_for_like", "max_abs_coefficient_difference",
              "max_coefficient_difference_in_se", "max_rel_se_difference", "rel_log_likelihood_difference",
              "coefficients_over_T_COEF", "iterations"]
@@ -27,7 +27,8 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
                            "driver_memory_gb": None if not static.get("driver_memory_bytes")
                            else round(static["driver_memory_bytes"] / 1e9, 1)}]),
              "## Runs\n",
-             "Timings from runs with `cluster_changed` true are not comparable: the cluster changed size under them.\n",
+             "A run with an entry under `caveats` is not a fair timing. A status of `running` means the process died during that fit, "
+             "typically because the driver ran out of memory.\n",
              to_markdown(summary(records), TIMING),
              f"## Numerical agreement with {reference}\n",
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. "

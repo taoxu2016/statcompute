@@ -89,3 +89,63 @@ def test_the_pprof_spark_adapter_maps_options_and_results(monkeypatch):
     assert result.iterations == 4 and result.converged is True and result.log_likelihood == -12.5
     assert calls["cox"] == ("time", "event", ["x1", "x2"],
                             {"ties": "breslow", "row_id": "id", "strata": "provider", "eps": 1e-13, "max_iterations": 50})
+
+
+def test_task_metrics_come_from_the_status_store_when_the_rest_api_is_closed(spark):
+    import time
+
+    from statcompute.bench.metrics import SparkMetrics
+
+    sc = spark.sparkContext
+    sc.setJobGroup("statcompute-store-test", "status store fallback")
+    assert spark.range(0, 4000, 1, 4).selectExpr("sum(id) AS s").first()["s"] == 7998000
+    metrics = SparkMetrics(spark)
+    metrics.base = None                                   # as on a cluster whose UI cannot be reached
+    out = None
+    for _ in range(20):                                   # the listener bus is asynchronous
+        out = metrics.collect("statcompute-store-test")
+        if out and out["tasks"] >= 4:
+            break
+        time.sleep(0.25)
+    assert out is not None and out["source"] == "status_store"
+    assert out["jobs"] >= 1 and out["tasks"] >= 4 and out["executor_run_s"] >= 0
+    assert metrics.executors()["cores"] >= 1
+    assert metrics.collect("no-such-group")["jobs"] == 0
+
+
+def test_records_are_scrubbed_before_they_are_written():
+    import json
+
+    from statcompute.bench.runner import scrub
+
+    record = {"plan": "p", "environment": {"static": {"databricks": {"cluster_id": "1114-123456-abcdefgh"}}},
+              "error": {"message": "/Workspace/Users/jane.doe@example.edu/a.py failed for jane.doe@example.edu",
+                        "trace": "at /home/alice/x and /Users/bob/y"}}
+    text = scrub(record)
+    assert "jane" not in text and "alice" not in text and "bob" not in text and "1114-123456" not in text
+    clean = json.loads(text)
+    assert clean["scrubbed"] and clean["environment"]["static"]["databricks"]["cluster_id"].startswith("sha256:")
+    assert record["environment"]["static"]["databricks"]["cluster_id"] == "1114-123456-abcdefgh"   # the original is untouched
+
+
+def test_a_fit_that_kills_the_process_would_leave_a_running_record(spark, tmp_path):
+    from statcompute.adapters import FitResult
+
+    seen = []
+
+    class Peeks(Adapter):
+        name, kind, role = "peeks", "driver", "prototype"
+
+        def support(self, model, data):
+            return Support()
+
+        def fit(self, spark, dataset, model):
+            seen.extend(r["status"] for r in load_records(str(tmp_path / "results")) if r["adapter"]["name"] == "peeks")
+            return FitResult(dataset.spec.feature_names(), [0.0] * dataset.spec.features, caveats=["a test caveat"])
+
+    adapters.register("peeks", Peeks)
+    record = run_plan(spark, dict(PLAN, adapters=["peeks"]), str(tmp_path / "data"), str(tmp_path / "results"))[0]
+    assert seen == ["running"]                            # what would remain had the process died in the fit
+    final = load_records(str(tmp_path / "results"))
+    assert [r["status"] for r in final] == ["ok"] and final[0]["scrubbed"] and final[0]["caveats"] == ["a test caveat"]
+    assert record["memory_guard"] is None and summary(final)[0]["caveats"] == "a test caveat"

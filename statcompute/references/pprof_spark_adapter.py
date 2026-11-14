@@ -49,6 +49,16 @@ class PprofSpark(Adapter):
 
         names = dataset.spec.feature_names()
         frame = dataset.frame(spark)
+        phases, caveats = {}, []
+        if self.options.get("cache_input"):
+            # pprof_spark reads its input several times while it prepares; its own scale notebook caches it first
+            before = clock.perf_counter()
+            frame = frame.persist()
+            frame.count()
+            phases["cache_input"] = clock.perf_counter() - before
+        version = getattr(spark, "version", "") or ""
+        if version and not version.startswith("4.1"):
+            caveats.append(f"pprof_spark's JAR targets Spark 4.1; this session runs Spark {version}")
         started = clock.perf_counter()
         if model.family == COX:
             options = {"ties": model.ties, "row_id": "id"}
@@ -76,9 +86,10 @@ class PprofSpark(Adapter):
             float(fitted.log_likelihood),
             _optional(int, getattr(fitted, "iterations", summary.get("iterations"))),
             _optional(bool, getattr(fitted, "converged", summary.get("converged"))),
-            options,
-            {"fit": elapsed},
+            dict(options, cache_input=bool(self.options.get("cache_input"))),
+            dict(phases, fit=elapsed),
             {"halvings": getattr(fitted, "halvings", None), "warnings": getattr(fitted, "warnings", None)},
+            caveats,
         )
 
 

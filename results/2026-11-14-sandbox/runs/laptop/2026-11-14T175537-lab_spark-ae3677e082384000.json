@@ -1,0 +1,307 @@
+{
+ "schema": 1,
+ "run_id": "ae3677e082384000",
+ "plan": "laptop",
+ "repeat": 0,
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:55:37+00:00",
+ "finished_at": "2026-11-14T17:55:44+00:00",
+ "adapter": {
+  "name": "lab_spark",
+  "kind": "spark",
+  "role": "prototype",
+  "version": "0.2.0",
+  "algorithm": "weighted-Gram Cox and profile-likelihood logistic, NumPy kernels per partition",
+  "passes_per_evaluation": 1
+ },
+ "dataset": {
+  "id": "logistic_fe-n200000-m400-p20-simple-s79-9bf14b58a7",
+  "spec": {
+   "family": "logistic_fe",
+   "rows": 200000,
+   "providers": 400,
+   "features": 20,
+   "design": "simple",
+   "seed": 79,
+   "indicator_share": 0.5,
+   "indicator_prevalence": 0.3,
+   "correlation": 0.5,
+   "generator": "sc-synth",
+   "generator_version": 1
+  },
+  "rows": 200000,
+  "events": 68080,
+  "checksum": 988024425870775161
+ },
+ "model": {
+  "family": "logistic_fe",
+  "ties": "breslow",
+  "strata": "provider",
+  "convergence": "tight",
+  "max_iterations": null,
+  "label": "logistic_fe/tight"
+ },
+ "support": {
+  "status": "exact",
+  "notes": [
+   "stops when the next Newton step is below the tolerance in standard errors (T_CONV)"
+  ]
+ },
+ "status": "ok",
+ "error": null,
+ "caveats": [],
+ "memory_guard": null,
+ "environment": {
+  "static": {
+   "spark_version": "4.0.1",
+   "application_id": "local-1794678887878",
+   "python": "3.12.3",
+   "driver_cores": 1,
+   "databricks": {
+    "runtime": null,
+    "cluster_id": null,
+    "worker_type": null,
+    "driver_type": null,
+    "workers_configured": null,
+    "min_workers": null,
+    "max_workers": null,
+    "scaling_type": null,
+    "photon": null
+   },
+   "spark_conf": {
+    "spark.sql.shuffle.partitions": "8",
+    "spark.sql.adaptive.enabled": "true",
+    "spark.sql.adaptive.coalescePartitions.enabled": "true",
+    "spark.sql.optimizer.canChangeCachedPlanOutputPartitioning": "false",
+    "spark.sql.codegen.maxFields": "100",
+    "spark.sql.ansi.enabled": "true",
+    "spark.executor.memory": null,
+    "spark.executor.cores": null,
+    "spark.driver.memory": null,
+    "spark.driver.maxResultSize": null,
+    "spark.default.parallelism": null,
+    "spark.master": "local[2]"
+   },
+   "driver_memory_bytes": 4186234880,
+   "numpy": "2.5.4",
+   "pandas": "3.0.6",
+   "pyarrow": "26.0.1",
+   "scipy": "1.18.1"
+  },
+  "before": {
+   "executors": 0,
+   "cores": 2,
+   "max_memory_bytes": 0,
+   "peak_jvm_heap_bytes_max": null,
+   "default_parallelism": 2
+  },
+  "after": {
+   "executors": 0,
+   "cores": 2,
+   "max_memory_bytes": 0,
+   "peak_jvm_heap_bytes_max": null,
+   "default_parallelism": 2
+  },
+  "cluster_changed": false
+ },
+ "timing": {
+  "wall_s": 6.112304971000015,
+  "phases": {
+   "prepare": 2.1794684730000426,
+   "fit": 3.9248013189999824
+  }
+ },
+ "spark": {
+  "source": "rest",
+  "jobs": 12,
+  "stages": 12,
+  "tasks": 32,
+  "executor_run_s": 8.47,
+  "executor_cpu_s": 1.202417006,
+  "gc_s": 0.544,
+  "shuffle_write_bytes": 10154953,
+  "shuffle_read_bytes": 10154953,
+  "memory_spilled_bytes": 0,
+  "disk_spilled_bytes": 0,
+  "result_bytes": 182767,
+  "peak_execution_memory_bytes": 75497472,
+  "heaviest_stages": [
+   {
+    "stage": 51,
+    "tasks": 4,
+    "median_task_s": 0.56,
+    "p95_task_s": 0.592,
+    "max_task_s": 0.592,
+    "straggler_ratio": 1.0571428571428572
+   },
+   {
+    "stage": 57,
+    "tasks": 4,
+    "median_task_s": 0.433,
+    "p95_task_s": 0.47,
+    "max_task_s": 0.47,
+    "straggler_ratio": 1.0854503464203233
+   },
+   {
+    "stage": 53,
+    "tasks": 4,
+    "median_task_s": 0.365,
+    "p95_task_s": 0.366,
+    "max_task_s": 0.366,
+    "straggler_ratio": 1.0027397260273974
+   },
+   {
+    "stage": 55,
+    "tasks": 4,
+    "median_task_s": 0.329,
+    "p95_task_s": 0.33,
+    "max_task_s": 0.33,
+    "straggler_ratio": 1.0030395136778116
+   },
+   {
+    "stage": 42,
+    "tasks": 2,
+    "median_task_s": 0.466,
+    "p95_task_s": 0.466,
+    "max_task_s": 0.466,
+    "straggler_ratio": 1.0
+   },
+   {
+    "stage": 44,
+    "tasks": 4,
+    "median_task_s": 0.256,
+    "p95_task_s": 0.258,
+    "max_task_s": 0.258,
+    "straggler_ratio": 1.0078125
+   },
+   {
+    "stage": 36,
+    "tasks": 2,
+    "median_task_s": 0.2,
+    "p95_task_s": 0.2,
+    "max_task_s": 0.2,
+    "straggler_ratio": 1.0
+   },
+   {
+    "stage": 38,
+    "tasks": 1,
+    "median_task_s": 0.043,
+    "p95_task_s": 0.043,
+    "max_task_s": 0.043,
+    "straggler_ratio": 1.0
+   },
+   {
+    "stage": 46,
+    "tasks": 4,
+    "median_task_s": 0.013,
+    "p95_task_s": 0.014,
+    "max_task_s": 0.014,
+    "straggler_ratio": 1.0769230769230769
+   },
+   {
+    "stage": 41,
+    "tasks": 1,
+    "median_task_s": 0.011,
+    "p95_task_s": 0.011,
+    "max_task_s": 0.011,
+    "straggler_ratio": 1.0
+   }
+  ],
+  "worst_straggler_ratio": 1.0854503464203233,
+  "effective_cores_by_run_time": 1.3857292854636885,
+  "effective_cores_by_cpu_time": 0.19672071529560417,
+  "cpu_utilization": 0.09836035764780209
+ },
+ "process": {
+  "peak_rss_bytes": 420192256,
+  "peak_rss_with_children_bytes": 1749565440,
+  "cpu_s": 0.08000000000000185,
+  "cores": 1,
+  "cpu_utilization": 0.01308835216494659
+ },
+ "fit": {
+  "feature_names": [
+   "x1",
+   "x2",
+   "x3",
+   "x4",
+   "x5",
+   "x6",
+   "x7",
+   "x8",
+   "x9",
+   "x10",
+   "x11",
+   "x12",
+   "x13",
+   "x14",
+   "x15",
+   "x16",
+   "x17",
+   "x18",
+   "x19",
+   "x20"
+  ],
+  "coefficients": [
+   -0.11081445801792167,
+   0.1286433409218333,
+   -0.10869064980520217,
+   0.09761638045547628,
+   -0.09809205018938952,
+   0.11840560093538073,
+   -0.1154823641727544,
+   0.12021962755865238,
+   -0.1234477507961513,
+   0.12537790180758157,
+   -0.11190739168136851,
+   0.11939017449255154,
+   -0.13458138569354366,
+   0.10562625334079306,
+   -0.10566309117718742,
+   0.1111559281130792,
+   -0.10739088152911357,
+   0.11268693021704677,
+   -0.10609274132958693,
+   0.1256944507591214
+  ],
+  "standard_errors": [
+   0.00827849463891156,
+   0.010412018704141771,
+   0.008278115988023088,
+   0.010438950010595614,
+   0.008275996885927324,
+   0.010410652656249653,
+   0.008268341290908855,
+   0.010430718129325337,
+   0.00826194238782403,
+   0.010419625812077673,
+   0.008253512019517805,
+   0.010429351338080593,
+   0.008276864592195345,
+   0.010432736703993337,
+   0.008276791329523869,
+   0.010450562616990082,
+   0.0082642568656348,
+   0.010409962083132262,
+   0.008269036542219634,
+   0.01042027686870115
+  ],
+  "log_likelihood": -124674.47420333742,
+  "iterations": 3,
+  "converged": true,
+  "settings": {
+   "tol_step_in_se": 1e-10
+  },
+  "extras": {
+   "partitions": 4,
+   "passes": 4,
+   "evaluations": 4,
+   "newton_step_in_se": 3.687803710284893e-11
+  }
+ },
+ "truth": {
+  "max_abs_z": 2.75200670070556,
+  "recovered": true
+ },
+ "scrubbed": true
+}

@@ -1,27 +1,23 @@
 {
  "schema": 1,
- "run_id": "947514c50dcd4ce5",
+ "run_id": "66a94bba88244cf4",
  "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:19:10+00:00",
- "finished_at": "2026-11-14T17:19:14+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:27+00:00",
+ "finished_at": "2026-11-14T17:54:29+00:00",
  "adapter": {
-  "name": "pprof_r",
+  "name": "lab_numpy",
   "kind": "driver",
-  "role": "reference",
-  "version": "2.0.12",
-  "r": "R version 4.3.3 (2024-02-29)",
-  "pinned": {
-   "commit": "d780cf50e11e4e5ff9008f14732e35cf632762f0",
-   "version": "2.0.12"
-  },
-  "matches_pin": null
+  "role": "prototype",
+  "version": "0.2.0",
+  "numpy": "2.5.4",
+  "algorithm": "weighted-Gram Cox; profile-likelihood logistic"
  },
  "dataset": {
-  "id": "cox-n20000-m40-p6-simple-s79-84f2b136f2",
+  "id": "logistic_fe-n20000-m40-p6-simple-s79-ae3990f696",
   "spec": {
-   "family": "cox",
+   "family": "logistic_fe",
    "rows": 20000,
    "providers": 40,
    "features": 6,
@@ -34,29 +30,34 @@
    "generator_version": 1
   },
   "rows": 20000,
-  "events": 8626,
-  "checksum": 3380788494082136481
+  "events": 6236,
+  "checksum": -1432340022735956370
  },
  "model": {
-  "family": "cox",
+  "family": "logistic_fe",
   "ties": "breslow",
   "strata": "provider",
   "convergence": "tight",
   "max_iterations": null,
-  "label": "cox/stratified/breslow/tight"
+  "label": "logistic_fe/tight"
  },
  "support": {
   "status": "exact",
   "notes": [
-   "fits through survival::coxph, whose stopping rule fit_cox() does not expose: relative change in the log partial likelihood below 1e-9, at most 20 iterations"
+   "stops when the next Newton step is below the tolerance in standard errors (T_CONV)"
   ]
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 10752000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676725963",
+   "application_id": "local-1794678824932",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -107,57 +108,55 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 1.9188009029999762,
+  "wall_s": 0.35946807599998465,
   "phases": {
-   "load": 0.36621671000000333,
-   "export": 0.14116196999998465,
-   "r_read": 0.02100000000000013,
-   "r_prepare": 0.01200000000000001,
-   "fit": 0.1259999999999999
+   "load": 0.3504146220000166,
+   "fit": 0.008586161999971864
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.124,
-  "executor_cpu_s": 0.034218958,
+  "executor_run_s": 0.089,
+  "executor_cpu_s": 0.022075029,
   "gc_s": 0.0,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 1559451,
+  "result_bytes": 1395964,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 28,
+    "stage": 65,
     "tasks": 2,
-    "median_task_s": 0.057,
-    "p95_task_s": 0.057,
-    "max_task_s": 0.057,
+    "median_task_s": 0.041,
+    "p95_task_s": 0.041,
+    "max_task_s": 0.041,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 27,
+    "stage": 64,
     "tasks": 1,
-    "median_task_s": 0.011,
-    "p95_task_s": 0.011,
-    "max_task_s": 0.011,
+    "median_task_s": 0.01,
+    "p95_task_s": 0.01,
+    "max_task_s": 0.01,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.06462369274797113,
-  "effective_cores_by_cpu_time": 0.017833511515707487,
-  "cpu_utilization": 0.008916755757853743
+  "effective_cores_by_run_time": 0.2475880500720843,
+  "effective_cores_by_cpu_time": 0.06141026275724396,
+  "cpu_utilization": 0.03070513137862198
  },
  "process": {
-  "peak_rss_bytes": 299237376,
-  "peak_rss_with_children_bytes": 1451786240,
-  "cpu_s": 1.5100000000000002,
+  "peak_rss_bytes": 300675072,
+  "peak_rss_with_children_bytes": 1303191552,
+  "cpu_s": 0.030000000000001137,
   "cores": 1,
-  "cpu_utilization": 0.7869498068502936
+  "cpu_utilization": 0.08345664609171696
  },
  "fit": {
   "feature_names": [
@@ -169,39 +168,36 @@
    "x6"
   ],
   "coefficients": [
-   -0.24578221275703113,
-   0.21410214887981874,
-   -0.2042299816818747,
-   0.18148242039674048,
-   -0.16633966577734144,
-   0.19637443527902937
+   -0.1761897529359504,
+   0.2393926734660204,
+   -0.21130935383486762,
+   0.17988111950026722,
+   -0.22038939899906276,
+   0.25821402170719077
   ],
   "standard_errors": [
-   0.01863062762975112,
-   0.02304868034088421,
-   0.01861502368574449,
-   0.023031462703398863,
-   0.018654380422729242,
-   0.02314429959308237
+   0.02678774933623211,
+   0.03340264339870401,
+   0.026836757195347994,
+   0.03354333391119641,
+   0.026882266557816982,
+   0.033640593178073136
   ],
-  "log_likelihood": -47167.27164078657,
+  "log_likelihood": -12038.64343687415,
   "iterations": 3,
   "converged": true,
   "settings": {
-   "strata": "provider",
-   "ties": "breslow",
-   "cutoff": 0,
-   "stopping": "survival::coxph defaults"
+   "tol_step_in_se": 1e-10
   },
   "extras": {
-   "peak_r_mb": 176.8,
-   "r_version": "4.3.3",
-   "pprof_version": "2.0.12",
-   "survival_version": "3.5.8"
+   "blocks": 1,
+   "evaluations": 4,
+   "newton_step_in_se": 6.525402343081472e-12
   }
  },
  "truth": {
-  "max_abs_z": 2.235999148980688,
+  "max_abs_z": 1.6078752294568601,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

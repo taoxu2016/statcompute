@@ -14,6 +14,15 @@ from ..testkit.localdata import footprint_bytes, load_arrays
 from ..testkit.specs import COX
 
 
+def _numba():
+    """The numba version pprof_py will compile its kernels with, or None when it falls back to pure Python."""
+    try:
+        import numba
+        return numba.__version__
+    except Exception:
+        return None
+
+
 class PprofPy(Adapter):
     name, kind, role = "pprof_py", "driver", "reference"
 
@@ -22,10 +31,9 @@ class PprofPy(Adapter):
         try:
             import pprof_py
             info["version"] = getattr(pprof_py, "__version__", None)
-            import numba
-            info["numba"] = numba.__version__
-        except Exception as error:  # the package, or numba, is missing
+        except Exception as error:
             info["note"] = f"{type(error).__name__}: {error}"
+        info["numba"] = _numba()
         info["numpy"] = np.__version__
         return info
 
@@ -93,6 +101,8 @@ class PprofPy(Adapter):
                                options, extras={"providers": int(len(estimator.coefficients_["gamma"])),
                                                 "excluded_providers": 0 if excluded is None else int(len(excluded))})
         result.phases = {"load": loaded - started, "fit": clock.perf_counter() - loaded}
+        if _numba() is None:
+            result.caveats.append("pprof_py ran without numba: its pure-Python kernels are far slower than the compiled ones")
         return result
 
 

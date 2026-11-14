@@ -43,10 +43,10 @@ for the fit phase, with iterations in brackets:
 
 | Model | Features | pprof (R) | pprof_py | lab_numpy | lab_spark |
 |---|---:|---:|---:|---:|---:|
-| Cox, stratified, Breslow | 20 | 3.09 (3) | 1.10 (4) | 0.51 (3) | 5.61 (3) |
-| Cox, stratified, Breslow | 50 | 5.46 (3) | 3.01 (3) | 1.26 (3) | 4.57 (3) |
-| Logistic fixed effects | 20 | 7.58 (5) | 0.55 (5) | 0.19 (3) | 2.67 (3) |
-| Logistic fixed effects | 50 | 4.06 (5) | 1.01 (5) | 0.45 (3) | 3.23 (3) |
+| Cox, stratified, Breslow | 20 | 2.86 (3) | 1.04 (4) | 0.59 (3) | 6.56 (3) |
+| Cox, stratified, Breslow | 50 | 5.59 (3) | 3.10 (3) | 1.32 (3) | 5.22 (3) |
+| Logistic fixed effects | 20 | 8.05 (5) | 0.53 (5) | 0.21 (3) | 3.92 (3) |
+| Logistic fixed effects | 50 | 2.71 (5) | 1.45 (5) | 0.45 (3) | 3.88 (3) |
 
 Against pprof_py, largest differences over the four datasets:
 
@@ -61,9 +61,10 @@ The records are in `results/2026-11-14-sandbox/` and the rendered report in
 
 What this shows: the harness runs all three kinds of implementation, the three installed ones agree
 to rounding, and the recommended algorithms return the validated estimates. What it does not show:
-anything about a cluster, or stable timings. These are single runs on a shared core (R's logistic
-fit took longer at 20 features than at 50, which is noise). `lab_spark`'s times at this size are
-Spark's fixed costs.
+anything about a cluster, or stable timings. These are single runs on a shared core. One oddity is
+not noise, since it appeared in two separate runs: R's logistic fit takes longer at 20 features
+than at 50, with the same reported iterations. It is unexplained. `lab_spark`'s times at this size
+are Spark's fixed costs.
 
 ## 4. What the baseline still needs
 

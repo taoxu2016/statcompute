@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "run_id": "789bd1693edc49ca",
+ "run_id": "34ecd5e5776f4d86",
  "plan": "laptop",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:21:09+00:00",
- "finished_at": "2026-11-14T17:21:20+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:56:24+00:00",
+ "finished_at": "2026-11-14T17:56:35+00:00",
  "adapter": {
   "name": "pprof_r",
   "kind": "driver",
@@ -53,10 +53,15 @@
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 400000000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676781401",
+   "application_id": "local-1794678887878",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -107,57 +112,58 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 10.873202722999963,
+  "wall_s": 10.650299632000042,
   "phases": {
-   "load": 3.059767083000054,
-   "export": 0.14710051199995178,
-   "r_read": 0.6059999999999999,
-   "r_prepare": 0.2490000000000001,
-   "fit": 5.4639999999999995
+   "load": 2.873797591000084,
+   "export": 0.14706011599992053,
+   "r_read": 0.5900000000000001,
+   "r_prepare": 0.24,
+   "fit": 5.594
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 2.441,
-  "executor_cpu_s": 0.713731728,
-  "gc_s": 0.948,
+  "executor_run_s": 2.929,
+  "executor_cpu_s": 0.673644999,
+  "gc_s": 0.754,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 87442994,
+  "result_bytes": 87442951,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
     "stage": 90,
     "tasks": 2,
-    "median_task_s": 1.216,
-    "p95_task_s": 1.216,
-    "max_task_s": 1.216,
+    "median_task_s": 1.462,
+    "p95_task_s": 1.462,
+    "max_task_s": 1.462,
     "straggler_ratio": 1.0
    },
    {
     "stage": 89,
     "tasks": 1,
-    "median_task_s": 0.012,
-    "p95_task_s": 0.012,
-    "max_task_s": 0.012,
+    "median_task_s": 0.007,
+    "p95_task_s": 0.007,
+    "max_task_s": 0.007,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.22449687200594357,
-  "effective_cores_by_cpu_time": 0.06564135206366117,
-  "cpu_utilization": 0.03282067603183059
+  "effective_cores_by_run_time": 0.2750157367591316,
+  "effective_cores_by_cpu_time": 0.0632512720089073,
+  "cpu_utilization": 0.03162563600445365
  },
  "process": {
-  "peak_rss_bytes": 564400128,
-  "peak_rss_with_children_bytes": 3090194432,
-  "cpu_s": 7.859999999999999,
+  "peak_rss_bytes": 564973568,
+  "peak_rss_with_children_bytes": 3028160512,
+  "cpu_s": 7.6100000000000065,
   "cores": 1,
-  "cpu_utilization": 0.7228780884746893
+  "cpu_utilization": 0.7145338875851804
  },
  "fit": {
   "feature_names": [
@@ -335,5 +341,6 @@
  "truth": {
   "max_abs_z": 2.1467372747022857,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

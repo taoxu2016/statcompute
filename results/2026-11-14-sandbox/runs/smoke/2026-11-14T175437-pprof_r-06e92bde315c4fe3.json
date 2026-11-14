@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "run_id": "3d27e4777ef444c7",
- "plan": "laptop",
+ "run_id": "06e92bde315c4fe3",
+ "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:20:14+00:00",
- "finished_at": "2026-11-14T17:20:22+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:37+00:00",
+ "finished_at": "2026-11-14T17:54:40+00:00",
  "adapter": {
   "name": "pprof_r",
   "kind": "driver",
@@ -19,13 +19,13 @@
   "matches_pin": null
  },
  "dataset": {
-  "id": "cox-n200000-m400-p20-simple-s79-215214277e",
+  "id": "cox-n20000-m40-p8-correlated-s79-7334551bdf",
   "spec": {
    "family": "cox",
-   "rows": 200000,
-   "providers": 400,
-   "features": 20,
-   "design": "simple",
+   "rows": 20000,
+   "providers": 40,
+   "features": 8,
+   "design": "correlated",
    "seed": 79,
    "indicator_share": 0.5,
    "indicator_prevalence": 0.3,
@@ -33,9 +33,9 @@
    "generator": "sc-synth",
    "generator_version": 1
   },
-  "rows": 200000,
-  "events": 92487,
-  "checksum": -3696920883326383224
+  "rows": 20000,
+  "events": 8905,
+  "checksum": -5657719228651664252
  },
  "model": {
   "family": "cox",
@@ -53,10 +53,15 @@
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 6400000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676781401",
+   "application_id": "local-1794678824932",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -107,57 +112,58 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 6.1829507539999895,
+  "wall_s": 2.024839381999982,
   "phases": {
-   "load": 1.289706064000029,
-   "export": 0.08980432200002042,
-   "r_read": 0.3620000000000001,
-   "r_prepare": 0.07199999999999984,
-   "fit": 3.0909999999999997
+   "load": 0.2914160170000173,
+   "export": 0.14625184199996966,
+   "r_read": 0.02499999999999991,
+   "r_prepare": 0.010000000000000009,
+   "fit": 0.139
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.966,
-  "executor_cpu_s": 0.256418528,
-  "gc_s": 0.136,
+  "executor_run_s": 0.123,
+  "executor_cpu_s": 0.024060683,
+  "gc_s": 0.014,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 38421097,
+  "result_bytes": 1886368,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 26,
+    "stage": 100,
     "tasks": 2,
-    "median_task_s": 0.484,
-    "p95_task_s": 0.484,
-    "max_task_s": 0.484,
+    "median_task_s": 0.062,
+    "p95_task_s": 0.062,
+    "max_task_s": 0.062,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 25,
+    "stage": 99,
     "tasks": 1,
-    "median_task_s": 0.009,
-    "p95_task_s": 0.009,
-    "max_task_s": 0.009,
+    "median_task_s": 0.008,
+    "p95_task_s": 0.008,
+    "max_task_s": 0.008,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.1562360818376335,
-  "effective_cores_by_cpu_time": 0.04147186969492082,
-  "cpu_utilization": 0.02073593484746041
+  "effective_cores_by_run_time": 0.06074555892848645,
+  "effective_cores_by_cpu_time": 0.011882761276716522,
+  "cpu_utilization": 0.005941380638358261
  },
  "process": {
-  "peak_rss_bytes": 419831808,
-  "peak_rss_with_children_bytes": 2373005312,
-  "cpu_s": 4.809999999999999,
+  "peak_rss_bytes": 302219264,
+  "peak_rss_with_children_bytes": 1553170432,
+  "cpu_s": 1.5399999999999983,
   "cores": 1,
-  "cpu_utilization": 0.7779457077008456
+  "cpu_utilization": 0.7605541524379597
  },
  "fit": {
   "feature_names": [
@@ -168,66 +174,30 @@
    "x5",
    "x6",
    "x7",
-   "x8",
-   "x9",
-   "x10",
-   "x11",
-   "x12",
-   "x13",
-   "x14",
-   "x15",
-   "x16",
-   "x17",
-   "x18",
-   "x19",
-   "x20"
+   "x8"
   ],
   "coefficients": [
-   -0.1161327147690726,
-   0.10859451665148318,
-   -0.10730109898877728,
-   0.11306067608071943,
-   -0.10682863456654265,
-   0.11701757409046866,
-   -0.12239309058238076,
-   0.10588430750119078,
-   -0.10583874951112329,
-   0.11052888598355409,
-   -0.1119351612996951,
-   0.1033299698772743,
-   -0.1023429333535462,
-   0.10961312201805173,
-   -0.11157709937555058,
-   0.10944929568486719,
-   -0.10838239034712753,
-   0.11171259998590193,
-   -0.10479975820432565,
-   0.11246490948678646
+   -1.632989388694923,
+   0.347568359175908,
+   -0.18741778272080034,
+   0.5589423127104293,
+   -0.018534098479193736,
+   1.129085911216802,
+   -0.0031586350925127283,
+   1.7711279536981412
   ],
   "standard_errors": [
-   0.005678300189888103,
-   0.0071124014051215856,
-   0.005677970603483525,
-   0.007100717739651651,
-   0.005674391577920543,
-   0.00709589453059257,
-   0.0056748739938065305,
-   0.0071229804672394235,
-   0.005662639727945953,
-   0.007109614171410808,
-   0.005663912570125642,
-   0.00711679881668831,
-   0.005677245758666492,
-   0.0071141520492355855,
-   0.005677509511018976,
-   0.0071131457756002615,
-   0.005665643935872377,
-   0.007103253466749112,
-   0.00567123239668107,
-   0.007106483913974934
+   0.11638018604219338,
+   0.024287532007771787,
+   0.01157792320926918,
+   0.03468769276261249,
+   0.0011442094018562269,
+   0.05443307635461518,
+   0.00023080647071587363,
+   0.08481652057559408
   ],
-  "log_likelihood": -503962.51772747457,
-  "iterations": 3,
+  "log_likelihood": -48085.43477397638,
+  "iterations": 6,
   "converged": true,
   "settings": {
    "strata": "provider",
@@ -236,14 +206,15 @@
    "stopping": "survival::coxph defaults"
   },
   "extras": {
-   "peak_r_mb": 516.9000000000001,
+   "peak_r_mb": 176.10000000000002,
    "r_version": "4.3.3",
    "pprof_version": "2.0.12",
    "survival_version": "3.5.8"
   }
  },
  "truth": {
-  "max_abs_z": 1.8660664041084802,
+  "max_abs_z": 1.7048930001700304,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "run_id": "8ed08284935e420c",
+ "run_id": "c762ab31b36f43c5",
  "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:18:58+00:00",
- "finished_at": "2026-11-14T17:18:58+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:31+00:00",
+ "finished_at": "2026-11-14T17:54:31+00:00",
  "adapter": {
   "name": "pprof_spark",
   "kind": "spark",
@@ -18,13 +18,13 @@
   "matches_pin": null
  },
  "dataset": {
-  "id": "cox-n20000-m40-p6-simple-s79-84f2b136f2",
+  "id": "cox-n20000-m40-p8-correlated-s79-7334551bdf",
   "spec": {
    "family": "cox",
    "rows": 20000,
    "providers": 40,
-   "features": 6,
-   "design": "simple",
+   "features": 8,
+   "design": "correlated",
    "seed": 79,
    "indicator_share": 0.5,
    "indicator_prevalence": 0.3,
@@ -33,8 +33,8 @@
    "generator_version": 1
   },
   "rows": 20000,
-  "events": 8626,
-  "checksum": 3380788494082136481
+  "events": 8905,
+  "checksum": -5657719228651664252
  },
  "model": {
   "family": "cox",
@@ -52,10 +52,13 @@
  },
  "status": "unavailable",
  "error": null,
+ "caveats": [],
+ "memory_guard": null,
  "environment": null,
  "timing": null,
  "spark": null,
  "process": null,
  "fit": null,
- "truth": null
+ "truth": null,
+ "scrubbed": true
 }

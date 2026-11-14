@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "run_id": "23c90ae5f82f48f8",
+ "run_id": "1cfda0650a8f4c2e",
  "plan": "laptop",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:20:33+00:00",
- "finished_at": "2026-11-14T17:20:35+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:55:18+00:00",
+ "finished_at": "2026-11-14T17:55:23+00:00",
  "adapter": {
   "name": "pprof_py",
   "kind": "driver",
@@ -20,9 +20,9 @@
   "matches_pin": null
  },
  "dataset": {
-  "id": "logistic_fe-n200000-m400-p20-simple-s79-9bf14b58a7",
+  "id": "cox-n200000-m400-p20-simple-s79-215214277e",
   "spec": {
-   "family": "logistic_fe",
+   "family": "cox",
    "rows": 200000,
    "providers": 400,
    "features": 20,
@@ -35,29 +35,34 @@
    "generator_version": 1
   },
   "rows": 200000,
-  "events": 68080,
-  "checksum": 988024425870775161
+  "events": 92487,
+  "checksum": -3696920883326383224
  },
  "model": {
-  "family": "logistic_fe",
+  "family": "cox",
   "ties": "breslow",
   "strata": "provider",
   "convergence": "tight",
   "max_iterations": null,
-  "label": "logistic_fe/tight"
+  "label": "cox/stratified/breslow/tight"
  },
  "support": {
   "status": "exact",
   "notes": [
-   "SerBIN; stops when the largest change in beta is below tol; provider effects are bounded at the median +/- 10"
+   "stops on the relative change in the log partial likelihood (eps), tested after a decrease check"
   ]
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 80000000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676781401",
+   "application_id": "local-1794678887878",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -108,54 +113,55 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 1.482652895000001,
+  "wall_s": 3.023489952000034,
   "phases": {
-   "load": 0.9317273259999865,
-   "fit": 0.5492928319999919
+   "load": 1.9834145969999781,
+   "fit": 1.0360133570000016
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.663,
-  "executor_cpu_s": 0.185928822,
-  "gc_s": 0.046,
+  "executor_run_s": 1.652,
+  "executor_cpu_s": 0.290580586,
+  "gc_s": 0.566,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 36787027,
+  "result_bytes": 38421097,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 59,
+    "stage": 24,
     "tasks": 2,
-    "median_task_s": 0.332,
-    "p95_task_s": 0.332,
-    "max_task_s": 0.332,
+    "median_task_s": 0.821,
+    "p95_task_s": 0.821,
+    "max_task_s": 0.821,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 58,
+    "stage": 23,
     "tasks": 1,
-    "median_task_s": 0.008,
-    "p95_task_s": 0.008,
-    "max_task_s": 0.008,
+    "median_task_s": 0.01,
+    "p95_task_s": 0.01,
+    "max_task_s": 0.01,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.4471714197138498,
-  "effective_cores_by_cpu_time": 0.12540279834006587,
-  "cpu_utilization": 0.06270139917003294
+  "effective_cores_by_run_time": 0.5463884538155004,
+  "effective_cores_by_cpu_time": 0.096107673785316,
+  "cpu_utilization": 0.048053836892658
  },
  "process": {
-  "peak_rss_bytes": 497463296,
-  "peak_rss_with_children_bytes": 1878380544,
-  "cpu_s": 0.47999999999999865,
+  "peak_rss_bytes": 417955840,
+  "peak_rss_with_children_bytes": 1635110912,
+  "cpu_s": 1.1400000000000001,
   "cores": 1,
-  "cpu_utilization": 0.32374401427246957
+  "cpu_utilization": 0.37704772236662865
  },
  "fit": {
   "feature_names": [
@@ -181,64 +187,62 @@
    "x20"
   ],
   "coefficients": [
-   -0.11081445801817853,
-   0.1286433409220274,
-   -0.10869064980544633,
-   0.09761638045563756,
-   -0.09809205018961442,
-   0.11840560093556769,
-   -0.11548236417301513,
-   0.12021962755885118,
-   -0.1234477507964275,
-   0.12537790180779282,
-   -0.11190739168162286,
-   0.11939017449273691,
-   -0.13458138569384887,
-   0.10562625334096395,
-   -0.10566309117741404,
-   0.11115592811324466,
-   -0.10739088152936231,
-   0.11268693021723138,
-   -0.106092741329822,
-   0.125694450759327
+   -0.11613271476906983,
+   0.10859451665136631,
+   -0.10730109898877623,
+   0.11306067608058207,
+   -0.10682863456654249,
+   0.11701757409028449,
+   -0.1223930905823859,
+   0.10588430750115939,
+   -0.10583874951112245,
+   0.11052888598352952,
+   -0.11193516129969301,
+   0.10332996987722813,
+   -0.10234293335354229,
+   0.10961312201796941,
+   -0.11157709937555145,
+   0.10944929568475241,
+   -0.10838239034713257,
+   0.11171259998583336,
+   -0.1047997582043288,
+   0.11246490948667907
   ],
   "standard_errors": [
-   0.008278494638911837,
-   0.010412018704141997,
-   0.008278115988023364,
-   0.010438950010595853,
-   0.008275996885927594,
-   0.010410652656249875,
-   0.00826834129090913,
-   0.010430718129325554,
-   0.008261942387824312,
-   0.01041962581207789,
-   0.008253512019518077,
-   0.010429351338080818,
-   0.00827686459219563,
-   0.01043273670399358,
-   0.008276791329524134,
-   0.010450562616990322,
-   0.008264256865635068,
-   0.010409962083132492,
-   0.008269036542219907,
-   0.010420276868701367
+   0.005678300189888085,
+   0.007112401405121705,
+   0.005677970603483548,
+   0.007100717739651849,
+   0.005674391577920498,
+   0.007095894530592805,
+   0.005674873993806554,
+   0.007122980467239451,
+   0.005662639727945908,
+   0.0071096141714108016,
+   0.005663912570125631,
+   0.007116798816688384,
+   0.005677245758666504,
+   0.00711415204923563,
+   0.005677509511018973,
+   0.007113145775600377,
+   0.0056656439358723455,
+   0.007103253466749206,
+   0.00567123239668108,
+   0.007106483913975029
   ],
-  "log_likelihood": -124674.47420333742,
-  "iterations": 5,
-  "converged": null,
+  "log_likelihood": -503962.5177274754,
+  "iterations": 4,
+  "converged": true,
   "settings": {
-   "tol": 1e-12,
-   "bound": 10.0,
-   "backtrack": true
+   "ties": "breslow",
+   "eps": 1e-13,
+   "max_iter": 50
   },
-  "extras": {
-   "providers": 400,
-   "excluded_providers": 0
-  }
+  "extras": {}
  },
  "truth": {
-  "max_abs_z": 2.7520067007423394,
+  "max_abs_z": 1.8660664041093775,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

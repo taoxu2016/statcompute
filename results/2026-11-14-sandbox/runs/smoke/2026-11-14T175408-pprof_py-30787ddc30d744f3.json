@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "run_id": "19e70017d5ba48e1",
+ "run_id": "30787ddc30d744f3",
  "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:19:31+00:00",
- "finished_at": "2026-11-14T17:19:32+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:08+00:00",
+ "finished_at": "2026-11-14T17:54:11+00:00",
  "adapter": {
   "name": "pprof_py",
   "kind": "driver",
@@ -20,13 +20,13 @@
   "matches_pin": null
  },
  "dataset": {
-  "id": "cox-n20000-m40-p8-correlated-s79-7334551bdf",
+  "id": "cox-n20000-m40-p6-simple-s79-84f2b136f2",
   "spec": {
    "family": "cox",
    "rows": 20000,
    "providers": 40,
-   "features": 8,
-   "design": "correlated",
+   "features": 6,
+   "design": "simple",
    "seed": 79,
    "indicator_share": 0.5,
    "indicator_prevalence": 0.3,
@@ -35,8 +35,8 @@
    "generator_version": 1
   },
   "rows": 20000,
-  "events": 8905,
-  "checksum": -5657719228651664252
+  "events": 8626,
+  "checksum": 3380788494082136481
  },
  "model": {
   "family": "cox",
@@ -54,10 +54,15 @@
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 2400000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676725963",
+   "application_id": "local-1794678824932",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -108,54 +113,55 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 0.5704170150000323,
+  "wall_s": 0.807553616000007,
   "phases": {
-   "load": 0.38835745299996915,
-   "fit": 0.1810134860000403
+   "load": 0.6539432189999843,
+   "fit": 0.1516178090000153
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.202,
-  "executor_cpu_s": 0.0385389,
-  "gc_s": 0.012,
+  "executor_run_s": 0.329,
+  "executor_cpu_s": 0.077528432,
+  "gc_s": 0.0,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 1886325,
+  "result_bytes": 1559408,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 98,
+    "stage": 26,
     "tasks": 2,
-    "median_task_s": 0.105,
-    "p95_task_s": 0.105,
-    "max_task_s": 0.105,
+    "median_task_s": 0.165,
+    "p95_task_s": 0.165,
+    "max_task_s": 0.165,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 97,
+    "stage": 25,
     "tasks": 1,
-    "median_task_s": 0.007,
-    "p95_task_s": 0.007,
-    "max_task_s": 0.007,
+    "median_task_s": 0.01,
+    "p95_task_s": 0.01,
+    "max_task_s": 0.01,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.3541268838202321,
-  "effective_cores_by_cpu_time": 0.06756267605376011,
-  "cpu_utilization": 0.033781338026880055
+  "effective_cores_by_run_time": 0.40740328998786524,
+  "effective_cores_by_cpu_time": 0.0960040676729498,
+  "cpu_utilization": 0.0480020338364749
  },
  "process": {
-  "peak_rss_bytes": 303362048,
-  "peak_rss_with_children_bytes": 1335545856,
-  "cpu_s": 0.13000000000000078,
+  "peak_rss_bytes": 295800832,
+  "peak_rss_with_children_bytes": 1229406208,
+  "cpu_s": 0.1299999999999999,
   "cores": 1,
-  "cpu_utilization": 0.22790344008232893
+  "cpu_utilization": 0.1609800233994603
  },
  "fit": {
   "feature_names": [
@@ -164,32 +170,26 @@
    "x3",
    "x4",
    "x5",
-   "x6",
-   "x7",
-   "x8"
+   "x6"
   ],
   "coefficients": [
-   -1.6329893887047033,
-   0.3475683591772205,
-   -0.18741778272256643,
-   0.5589423127280946,
-   -0.01853409847941963,
-   1.1290859112554597,
-   -0.003158635092578347,
-   1.7711279338988033
+   -0.24578221275692638,
+   0.2141021488586245,
+   -0.20422998168253081,
+   0.18148242038973503,
+   -0.16633966577735815,
+   0.19637443526455925
   ],
   "standard_errors": [
-   0.11638018603952224,
-   0.0242875320081838,
-   0.011577923209165616,
-   0.03468769276721244,
-   0.0011442094018262459,
-   0.05443307636190177,
-   0.00023080647071639944,
-   0.08481652133474585
+   0.018630627629750957,
+   0.023048680340967267,
+   0.018615023685743446,
+   0.02303146270342656,
+   0.018654380422726314,
+   0.023144299593141026
   ],
-  "log_likelihood": -48085.43477397661,
-  "iterations": 7,
+  "log_likelihood": -47167.271640786734,
+  "iterations": 4,
   "converged": true,
   "settings": {
    "ties": "breslow",
@@ -199,7 +199,8 @@
   "extras": {}
  },
  "truth": {
-  "max_abs_z": 1.7048930006519964,
+  "max_abs_z": 2.2359991489750852,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

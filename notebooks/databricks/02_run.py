@@ -16,6 +16,8 @@ dbutils.widgets.text("plan", "standard", "Plan")
 dbutils.widgets.text("adapters", "", "Implementations, comma-separated (empty: all in the plan)")
 dbutils.widgets.text("max_rows", "5000000", "Largest dataset to run now (rows)")
 dbutils.widgets.text("families", "", "Model families, comma-separated (empty: both)")
+dbutils.widgets.dropdown("cache_input", "false", ["false", "true"], "Cache the input table before pprof_spark fits")
+dbutils.widgets.text("lab_rows_per_partition", "", "Rows per partition for lab_spark (empty: 50000)")
 
 # COMMAND ----------
 
@@ -28,6 +30,9 @@ if not (data_root and results_root):
     raise ValueError("set the data_root and results_root widgets")
 split = lambda text: [v.strip() for v in text.split(",") if v.strip()] or None
 plan = load_plan(dbutils.widgets.get("plan").strip())
+plan.setdefault("options", {})["cache_input"] = dbutils.widgets.get("cache_input") == "true"
+if dbutils.widgets.get("lab_rows_per_partition").strip():
+    plan["options"]["lab_rows_per_partition"] = int(float(dbutils.widgets.get("lab_rows_per_partition")))
 records = run_plan(
     spark, plan, data_root, results_root,
     only_adapters=split(dbutils.widgets.get("adapters")),

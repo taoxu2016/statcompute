@@ -1,27 +1,27 @@
 {
  "schema": 1,
- "run_id": "f8323a7bc2e44f23",
- "plan": "laptop",
+ "run_id": "d57be0b32c53476e",
+ "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:20:46+00:00",
- "finished_at": "2026-11-14T17:20:47+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:40+00:00",
+ "finished_at": "2026-11-14T17:54:41+00:00",
  "adapter": {
   "name": "lab_numpy",
   "kind": "driver",
   "role": "prototype",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "numpy": "2.5.4",
   "algorithm": "weighted-Gram Cox; profile-likelihood logistic"
  },
  "dataset": {
-  "id": "logistic_fe-n200000-m400-p20-simple-s79-9bf14b58a7",
+  "id": "cox-n20000-m40-p8-correlated-s79-7334551bdf",
   "spec": {
-   "family": "logistic_fe",
-   "rows": 200000,
-   "providers": 400,
-   "features": 20,
-   "design": "simple",
+   "family": "cox",
+   "rows": 20000,
+   "providers": 40,
+   "features": 8,
+   "design": "correlated",
    "seed": 79,
    "indicator_share": 0.5,
    "indicator_prevalence": 0.3,
@@ -29,17 +29,17 @@
    "generator": "sc-synth",
    "generator_version": 1
   },
-  "rows": 200000,
-  "events": 68080,
-  "checksum": 988024425870775161
+  "rows": 20000,
+  "events": 8905,
+  "checksum": -5657719228651664252
  },
  "model": {
-  "family": "logistic_fe",
+  "family": "cox",
   "ties": "breslow",
   "strata": "provider",
   "convergence": "tight",
   "max_iterations": null,
-  "label": "logistic_fe/tight"
+  "label": "cox/stratified/breslow/tight"
  },
  "support": {
   "status": "exact",
@@ -49,10 +49,15 @@
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 14336000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676781401",
+   "application_id": "local-1794678824932",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -103,54 +108,55 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 1.015547885999979,
+  "wall_s": 0.37076815300002863,
   "phases": {
-   "load": 0.8255283280000185,
-   "fit": 0.18801250100000289
+   "load": 0.27820557699999426,
+   "fit": 0.0920511319999946
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.618,
-  "executor_cpu_s": 0.159014538,
-  "gc_s": 0.052,
+  "executor_run_s": 0.08,
+  "executor_cpu_s": 0.021496688,
+  "gc_s": 0.008,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 36787027,
+  "result_bytes": 1886411,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 63,
+    "stage": 102,
     "tasks": 2,
-    "median_task_s": 0.335,
-    "p95_task_s": 0.335,
-    "max_task_s": 0.335,
+    "median_task_s": 0.038,
+    "p95_task_s": 0.038,
+    "max_task_s": 0.038,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 62,
+    "stage": 101,
     "tasks": 1,
-    "median_task_s": 0.008,
-    "p95_task_s": 0.008,
-    "max_task_s": 0.008,
+    "median_task_s": 0.004,
+    "p95_task_s": 0.004,
+    "max_task_s": 0.004,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.6085385125798123,
-  "effective_cores_by_cpu_time": 0.15658004924447583,
-  "cpu_utilization": 0.07829002462223791
+  "effective_cores_by_run_time": 0.2157682620599667,
+  "effective_cores_by_cpu_time": 0.057978787622566766,
+  "cpu_utilization": 0.028989393811283383
  },
  "process": {
-  "peak_rss_bytes": 428208128,
-  "peak_rss_with_children_bytes": 1812439040,
-  "cpu_s": 0.23999999999999844,
+  "peak_rss_bytes": 302235648,
+  "peak_rss_with_children_bytes": 1346297856,
+  "cpu_s": 0.08000000000000007,
   "cores": 1,
-  "cpu_utilization": 0.23632563595332365
+  "cpu_utilization": 0.21576826205996688
  },
  "fit": {
   "feature_names": [
@@ -161,78 +167,43 @@
    "x5",
    "x6",
    "x7",
-   "x8",
-   "x9",
-   "x10",
-   "x11",
-   "x12",
-   "x13",
-   "x14",
-   "x15",
-   "x16",
-   "x17",
-   "x18",
-   "x19",
-   "x20"
+   "x8"
   ],
   "coefficients": [
-   -0.11081445801792171,
-   0.12864334092183324,
-   -0.10869064980520214,
-   0.09761638045547635,
-   -0.09809205018938955,
-   0.11840560093538072,
-   -0.11548236417275438,
-   0.1202196275586524,
-   -0.12344775079615133,
-   0.12537790180758157,
-   -0.11190739168136853,
-   0.1193901744925515,
-   -0.13458138569354366,
-   0.10562625334079304,
-   -0.1056630911771874,
-   0.11115592811307927,
-   -0.10739088152911348,
-   0.11268693021704684,
-   -0.10609274132958697,
-   0.12569445075912142
+   -1.6329893887046858,
+   0.34756835917722345,
+   -0.18741778272256915,
+   0.5589423127280949,
+   -0.018534098479419697,
+   1.1290859112554563,
+   -0.003158635092578358,
+   1.7711279338988009
   ],
   "standard_errors": [
-   0.00827849463891156,
-   0.010412018704141771,
-   0.00827811598802309,
-   0.010438950010595617,
-   0.008275996885927322,
-   0.010410652656249651,
-   0.008268341290908855,
-   0.010430718129325334,
-   0.00826194238782403,
-   0.010419625812077674,
-   0.008253512019517803,
-   0.010429351338080596,
-   0.008276864592195347,
-   0.010432736703993337,
-   0.008276791329523867,
-   0.01045056261699008,
-   0.008264256865634801,
-   0.010409962083132265,
-   0.008269036542219634,
-   0.01042027686870115
+   0.11638018603952212,
+   0.02428753200818376,
+   0.011577923209165623,
+   0.03468769276721245,
+   0.0011442094018262454,
+   0.054433076361901964,
+   0.00023080647071639933,
+   0.08481652133474615
   ],
-  "log_likelihood": -124674.47420333744,
-  "iterations": 3,
+  "log_likelihood": -48085.434773976616,
+  "iterations": 7,
   "converged": true,
   "settings": {
    "tol_step_in_se": 1e-10
   },
   "extras": {
-   "blocks": 4,
-   "evaluations": 4,
-   "newton_step_in_se": 3.687655557355303e-11
+   "blocks": 1,
+   "evaluations": 8,
+   "newton_step_in_se": 3.660534161681313e-13
   }
  },
  "truth": {
-  "max_abs_z": 2.7520067007055595,
+  "max_abs_z": 1.7048930006519292,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

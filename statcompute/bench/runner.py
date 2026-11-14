@@ -6,10 +6,13 @@ earlier one.
 """
 from __future__ import annotations
 
+import copy
 import datetime
 import gc
+import hashlib
 import json
 import os
+import re
 import threading
 import time
 import traceback
@@ -56,7 +59,9 @@ def _truth(spec: DatasetSpec, fit) -> Optional[Dict[str, Any]]:
 
 
 def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec, repeat: int,
-            options: Dict[str, Any]) -> Dict[str, Any]:
+            options: Dict[str, Any], checkpoint: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
+    """One fit, one record. `checkpoint` is called with the record, status "running", just before
+    the fit starts: if the process dies during the fit, that is what remains."""
     spec = dataset.spec
     run_id = uuid.uuid4().hex[:16]
     record: Dict[str, Any] = {
@@ -66,8 +71,8 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
                                                        "rows": dataset.rows, "events": dataset.manifest.get("events"),
                                                        "checksum": dataset.manifest.get("checksum")},
         "model": dict(model.to_dict(), label=model.label()),
-        "support": None, "status": None, "error": None, "environment": None,
-        "timing": None, "spark": None, "process": None, "fit": None, "truth": None,
+        "support": None, "status": None, "error": None, "caveats": [], "memory_guard": None,
+        "environment": None, "timing": None, "spark": None, "process": None, "fit": None, "truth": None,
     }
 
     def done(status: str, **more) -> Dict[str, Any]:
@@ -75,6 +80,7 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         return record
 
     adapter = adapters.get(adapter_name)
+    adapter.options = dict(options)
     record["adapter"] = adapter.describe(spark)
     pinned = (references.lock().get("references") or {}).get(adapter_name)
     if pinned:
@@ -91,8 +97,11 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         return done("unsupported")
     need = adapter.driver_bytes(model, spec)
     info = environment.static(spark)
+    # The driver node also holds the Spark driver's JVM, so a single-machine fit gets a fraction of it.
     budget = options.get("driver_memory_bytes") or (
-        (info.get("driver_memory_bytes") or 0) * float(options.get("driver_memory_fraction", 0.6)))
+        (info.get("driver_memory_bytes") or 0) * float(options.get("driver_memory_fraction", 0.4)))
+    if need:
+        record["memory_guard"] = {"need_bytes": int(need), "budget_bytes": int(budget or 0)}
     if need and budget and need > budget:
         return done("skipped_memory", error={"type": "MemoryGuard",
                                              "message": f"needs about {need} bytes on the driver; the budget is {int(budget)}"})
@@ -111,6 +120,9 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         timer.daemon = True
         timer.start()
     sc.setJobGroup(group, f"{plan_name}: {adapter_name} on {dataset.id} ({model.label()})")
+    record["environment"] = {"static": info, "before": before, "after": None, "cluster_changed": None}
+    if checkpoint is not None:
+        checkpoint(dict(record, status="running"))
     fit, error = None, None
     started = time.perf_counter()
     with ProcessSampler() as sampler:
@@ -129,6 +141,7 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
     except Exception:
         pass
     after = environment.moving(spark)
+    time.sleep(0.5)                      # let the listener bus deliver the last stage's completion
     spark_metrics = metrics.collect(group)
     if spark_metrics is not None and wall > 0:
         cores = after.get("cores") or before.get("cores")
@@ -147,20 +160,43 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         except Exception:
             pass
     gc.collect()
+    caveats = [] if fit is None else list(fit.caveats)
+    if record["environment"]["cluster_changed"]:
+        caveats.append("the cluster changed size during the fit")
+    if record["adapter"].get("matches_pin") is False:
+        caveats.append("the installed build is not the commit pinned in REFERENCES.lock")
+    record["caveats"] = caveats
     if error is not None:
         return done("timeout" if timed_out.is_set() else "failed", error=error)
-    record["fit"] = {k: v for k, v in asdict(fit).items() if k != "phases"}
+    record["fit"] = {k: v for k, v in asdict(fit).items() if k not in ("phases", "caveats")}
     record["truth"] = _truth(spec, fit)
     return done("ok")
 
 
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_USER_PATH = re.compile(r"/(Users|Repos|home)/[^/\s'\"\\]+")
+
+
+def scrub(record: Dict[str, Any]) -> str:
+    """The record as JSON text with nothing that names a person or a workspace: the cluster
+    identifier becomes a short hash, and e-mail addresses and user folders in any message or trace
+    are replaced. Records are meant to be committed to a public repository."""
+    clean = copy.deepcopy(record)
+    dbx = ((clean.get("environment") or {}).get("static") or {}).get("databricks") or {}
+    if dbx.get("cluster_id"):
+        dbx["cluster_id"] = "sha256:" + hashlib.sha256(str(dbx["cluster_id"]).encode()).hexdigest()[:12]
+    clean["scrubbed"] = True
+    text = json.dumps(clean, indent=1, default=str)
+    return _USER_PATH.sub(r"/\1/<user>", _EMAIL.sub("<user>", text))
+
+
 def write_record(results_root: str, record: Dict[str, Any]) -> str:
+    """Write the record, replacing an earlier version of the same run (its "running" checkpoint)."""
     folder = os.path.join(local_path(results_root), "runs", record["plan"])
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, f"{record['started_at'][:19].replace(':', '')}-{record['adapter']['name']}-{record['run_id']}.json")
-    with open(path + ".tmp", "w") as f:
-        json.dump(record, f, indent=1, default=str)
-    os.replace(path + ".tmp", path)
+    with open(path, "w") as f:           # one sequential write: works on Volumes and workspace files
+        f.write(scrub(record))
     return path
 
 
@@ -182,7 +218,8 @@ def run_plan(spark, plan: Dict[str, Any], data_root: str, results_root: str,
             model = ModelSpec.from_dict(model_entry)
             for adapter_name in chosen:
                 for repeat in range(int(plan.get("repeats", 1))):
-                    record = run_one(spark, plan["name"], adapter_name, dataset, model, repeat, options)
+                    record = run_one(spark, plan["name"], adapter_name, dataset, model, repeat, options,
+                                     checkpoint=lambda partial: write_record(results_root, partial))
                     record["file"] = write_record(results_root, record)
                     records.append(record)
                     if on_record:

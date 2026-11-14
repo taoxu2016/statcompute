@@ -1,27 +1,32 @@
 {
  "schema": 1,
- "run_id": "3769b1c80a0f4195",
+ "run_id": "2770cd250538468f",
  "plan": "smoke",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:19:34+00:00",
- "finished_at": "2026-11-14T17:19:35+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:54:23+00:00",
+ "finished_at": "2026-11-14T17:54:24+00:00",
  "adapter": {
-  "name": "lab_numpy",
+  "name": "pprof_py",
   "kind": "driver",
-  "role": "prototype",
-  "version": "0.1.0",
+  "role": "reference",
+  "version": "0.7.0",
+  "numba": "0.68.1",
   "numpy": "2.5.4",
-  "algorithm": "weighted-Gram Cox; profile-likelihood logistic"
+  "pinned": {
+   "commit": "94b5476398da262987b97ac6fec3bbb91b048731",
+   "version": "0.7.0"
+  },
+  "matches_pin": null
  },
  "dataset": {
-  "id": "cox-n20000-m40-p8-correlated-s79-7334551bdf",
+  "id": "logistic_fe-n20000-m40-p6-simple-s79-ae3990f696",
   "spec": {
-   "family": "cox",
+   "family": "logistic_fe",
    "rows": 20000,
    "providers": 40,
-   "features": 8,
-   "design": "correlated",
+   "features": 6,
+   "design": "simple",
    "seed": 79,
    "indicator_share": 0.5,
    "indicator_prevalence": 0.3,
@@ -30,29 +35,34 @@
    "generator_version": 1
   },
   "rows": 20000,
-  "events": 8905,
-  "checksum": -5657719228651664252
+  "events": 6236,
+  "checksum": -1432340022735956370
  },
  "model": {
-  "family": "cox",
+  "family": "logistic_fe",
   "ties": "breslow",
   "strata": "provider",
   "convergence": "tight",
   "max_iterations": null,
-  "label": "cox/stratified/breslow/tight"
+  "label": "logistic_fe/tight"
  },
  "support": {
   "status": "exact",
   "notes": [
-   "stops when the next Newton step is below the tolerance in standard errors (T_CONV)"
+   "SerBIN; stops when the largest change in beta is below tol; provider effects are bounded at the median +/- 10"
   ]
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 3360000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676725963",
+   "application_id": "local-1794678824932",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -103,54 +113,55 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 0.3925993870000184,
+  "wall_s": 0.44197011300002487,
   "phases": {
-   "load": 0.26704697299999225,
-   "fit": 0.12369410700000572
+   "load": 0.385993051000014,
+   "fit": 0.04869193499996527
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 0.085,
-  "executor_cpu_s": 0.021958578,
+  "executor_run_s": 0.162,
+  "executor_cpu_s": 0.039887287,
   "gc_s": 0.0,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 1886282,
+  "result_bytes": 1395964,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
-    "stage": 102,
+    "stage": 61,
     "tasks": 2,
-    "median_task_s": 0.041,
-    "p95_task_s": 0.041,
-    "max_task_s": 0.041,
+    "median_task_s": 0.078,
+    "p95_task_s": 0.078,
+    "max_task_s": 0.078,
     "straggler_ratio": 1.0
    },
    {
-    "stage": 101,
+    "stage": 60,
     "tasks": 1,
-    "median_task_s": 0.005,
-    "p95_task_s": 0.005,
-    "max_task_s": 0.005,
+    "median_task_s": 0.011,
+    "p95_task_s": 0.011,
+    "max_task_s": 0.011,
     "straggler_ratio": 1.0
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.21650568700453937,
-  "effective_cores_by_cpu_time": 0.05593125900626781,
-  "cpu_utilization": 0.027965629503133905
+  "effective_cores_by_run_time": 0.36654062171844387,
+  "effective_cores_by_cpu_time": 0.09024883318297533,
+  "cpu_utilization": 0.045124416591487665
  },
  "process": {
-  "peak_rss_bytes": 303702016,
-  "peak_rss_with_children_bytes": 1341456384,
-  "cpu_s": 0.0799999999999983,
+  "peak_rss_bytes": 298696704,
+  "peak_rss_with_children_bytes": 1303392256,
+  "cpu_s": 0.05000000000000071,
   "cores": 1,
-  "cpu_utilization": 0.20377005835720916
+  "cpu_utilization": 0.11312982151803984
  },
  "fit": {
   "feature_names": [
@@ -159,44 +170,40 @@
    "x3",
    "x4",
    "x5",
-   "x6",
-   "x7",
-   "x8"
+   "x6"
   ],
   "coefficients": [
-   -1.6329893887046858,
-   0.34756835917722345,
-   -0.18741778272256915,
-   0.5589423127280949,
-   -0.018534098479419697,
-   1.1290859112554563,
-   -0.003158635092578358,
-   1.7711279338988009
+   -0.17618975293608774,
+   0.23939267346613183,
+   -0.2113093538350427,
+   0.1798811195003713,
+   -0.22038939899923746,
+   0.25821402170728414
   ],
   "standard_errors": [
-   0.11638018603952212,
-   0.02428753200818376,
-   0.011577923209165623,
-   0.03468769276721245,
-   0.0011442094018262454,
-   0.054433076361901964,
-   0.00023080647071639933,
-   0.08481652133474615
+   0.02678774933623244,
+   0.03340264339870419,
+   0.02683675719534837,
+   0.03354333391119664,
+   0.026882266557817364,
+   0.03364059317807331
   ],
-  "log_likelihood": -48085.434773976616,
-  "iterations": 7,
-  "converged": true,
+  "log_likelihood": -12038.643436874148,
+  "iterations": 5,
+  "converged": null,
   "settings": {
-   "tol_step_in_se": 1e-10
+   "tol": 1e-12,
+   "bound": 10.0,
+   "backtrack": true
   },
   "extras": {
-   "blocks": 1,
-   "evaluations": 8,
-   "newton_step_in_se": 3.660534161681313e-13
+   "providers": 40,
+   "excluded_providers": 0
   }
  },
  "truth": {
-  "max_abs_z": 1.7048930006519292,
+  "max_abs_z": 1.6078752294596275,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

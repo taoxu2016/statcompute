@@ -1,16 +1,16 @@
 {
  "schema": 1,
- "run_id": "8649707f76f94a7e",
+ "run_id": "9c64e45d54854349",
  "plan": "laptop",
  "repeat": 0,
- "statcompute": "0.1.0",
- "started_at": "2026-11-14T17:21:54+00:00",
- "finished_at": "2026-11-14T17:21:57+00:00",
+ "statcompute": "0.2.0",
+ "started_at": "2026-11-14T17:57:07+00:00",
+ "finished_at": "2026-11-14T17:57:10+00:00",
  "adapter": {
   "name": "lab_numpy",
   "kind": "driver",
   "role": "prototype",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "numpy": "2.5.4",
   "algorithm": "weighted-Gram Cox; profile-likelihood logistic"
  },
@@ -49,10 +49,15 @@
  },
  "status": "ok",
  "error": null,
+ "caveats": [],
+ "memory_guard": {
+  "need_bytes": 176000000,
+  "budget_bytes": 1674493952
+ },
  "environment": {
   "static": {
    "spark_version": "4.0.1",
-   "application_id": "local-1794676781401",
+   "application_id": "local-1794678887878",
    "python": "3.12.3",
    "driver_cores": 1,
    "databricks": {
@@ -103,32 +108,33 @@
   "cluster_changed": false
  },
  "timing": {
-  "wall_s": 2.2426059289999785,
+  "wall_s": 1.9385195330000897,
   "phases": {
-   "load": 1.794388615999992,
-   "fit": 0.44668378999995184
+   "load": 1.4814014410000027,
+   "fit": 0.4534526969999888
   }
  },
  "spark": {
+  "source": "rest",
   "jobs": 2,
   "stages": 2,
   "tasks": 3,
-  "executor_run_s": 1.378,
-  "executor_cpu_s": 0.433596004,
-  "gc_s": 0.458,
+  "executor_run_s": 1.065,
+  "executor_cpu_s": 0.39759007,
+  "gc_s": 0.06,
   "shuffle_write_bytes": 0,
   "shuffle_read_bytes": 0,
   "memory_spilled_bytes": 0,
   "disk_spilled_bytes": 0,
-  "result_bytes": 85808924,
+  "result_bytes": 85808967,
   "peak_execution_memory_bytes": 0,
   "heaviest_stages": [
    {
     "stage": 127,
     "tasks": 2,
-    "median_task_s": 0.8,
-    "p95_task_s": 0.8,
-    "max_task_s": 0.8,
+    "median_task_s": 0.532,
+    "p95_task_s": 0.532,
+    "max_task_s": 0.532,
     "straggler_ratio": 1.0
    },
    {
@@ -141,16 +147,16 @@
    }
   ],
   "worst_straggler_ratio": 1.0,
-  "effective_cores_by_run_time": 0.6144637281925304,
-  "effective_cores_by_cpu_time": 0.19334471491090227,
-  "cpu_utilization": 0.09667235745545114
+  "effective_cores_by_run_time": 0.5493883254051022,
+  "effective_cores_by_cpu_time": 0.2050998523521102,
+  "cpu_utilization": 0.1025499261760551
  },
  "process": {
-  "peak_rss_bytes": 661291008,
-  "peak_rss_with_children_bytes": 2522267648,
-  "cpu_s": 0.6299999999999955,
+  "peak_rss_bytes": 584019968,
+  "peak_rss_with_children_bytes": 2460631040,
+  "cpu_s": 0.6000000000000014,
   "cores": 1,
-  "cpu_utilization": 0.28092318487756995
+  "cpu_utilization": 0.309514549524002
  },
  "fit": {
   "feature_names": [
@@ -324,5 +330,6 @@
  "truth": {
   "max_abs_z": 2.5473062741941708,
   "recovered": true
- }
+ },
+ "scrubbed": true
 }

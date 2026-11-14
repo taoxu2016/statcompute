@@ -49,6 +49,7 @@ def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "worst_straggler_ratio": None if spark.get("worst_straggler_ratio") is None
             else round(spark["worst_straggler_ratio"], 1),
             "driver_peak_rss_gb": _gb(process.get("peak_rss_with_children_bytes") or process.get("peak_rss_bytes")),
+            "caveats": "; ".join(r.get("caveats") or []),
             "note": "" if not r.get("error") else r["error"]["message"][:160],
         })
     return rows

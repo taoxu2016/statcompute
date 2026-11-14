@@ -56,8 +56,9 @@
  ],
  "repeats": 1,
  "options": {
-  "driver_memory_fraction": 0.6,
+  "driver_memory_fraction": 0.4,
   "timeout_s": 7200,
-  "clear_cache": true
+  "clear_cache": true,
+  "cache_input": false
  }
 }

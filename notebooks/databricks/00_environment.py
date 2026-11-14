@@ -25,8 +25,15 @@ if not (dbx.get("runtime") or "").startswith("17.3"):
 if (dbx.get("scaling_type") or "").lower().startswith("auto") or (
         dbx.get("min_workers") and dbx.get("max_workers") and dbx["min_workers"] != dbx["max_workers"]):
     problems.append("the cluster autoscales: timings need a fixed number of workers")
-if SparkMetrics(spark).executors() is None:
-    notes.append("the Spark UI's REST API is not reachable from the driver: records will lack task metrics")
+probe = SparkMetrics(spark)
+if probe._get("executors") is not None:
+    notes.append("task metrics: from the Spark UI's REST API")
+elif probe._store_stages("statcompute-probe") is not None:
+    notes.append("task metrics: the REST API is closed; the status store answers through py4j, which is enough")
+else:
+    problems.append("neither the Spark UI's REST API nor the status store can be read: records would lack task metrics")
+if moving.get("executors") not in (None, 10):
+    notes.append(f"{moving.get('executors')} executors are attached; the standard cluster has 10")
 try:
     spark.sparkContext._jsc.sc()
 except Exception as error:
@@ -34,7 +41,13 @@ except Exception as error:
 if (dbx.get("photon") or "").lower() == "true":
     notes.append("Photon is on: pprof_spark runs typed Dataset code, which Photon does not execute")
 
-print(json.dumps({"static": static, "now": moving}, indent=1, default=str))
+# Cluster tags that describe size and scaling, with their real names, so the checks above can be corrected if
+# Databricks names them differently. Tags that name people or workspaces are not printed.
+wanted = ("worker", "scal", "nodetype", "sparkversion", "photon", "autoterm", "numworkers")
+tags = {k.rsplit(".", 1)[-1]: v for k, v in spark.sparkContext.getConf().getAll()
+        if "clusterUsageTags" in k and any(w in k.lower() for w in wanted)}
+print(json.dumps({"static": dict(static, databricks=dict(static["databricks"], cluster_id="(not printed)")),
+                  "now": moving, "cluster_tags": tags}, indent=1, default=str))
 print("\nPROBLEMS:" if problems else "\nNo blocking problem found.")
 for p in problems:
     print("  -", p)
@@ -57,6 +70,8 @@ for name in adapters.names():
     described, available = adapter.describe(spark), adapter.available(spark)
     rows.append({"adapter": name, "role": adapter.role, "runs on": adapter.kind,
                  "available": available.status != "unsupported", "why not": "; ".join(available.notes),
-                 "found": described.get("commit") or described.get("version"),
-                 "pinned": (pins.get(name) or {}).get("commit")})
+                 "found": str(described.get("commit") or described.get("version") or ""),
+                 "pinned": str((pins.get(name) or {}).get("commit") or ""),
+                 "note": "NO NUMBA: pure-Python kernels, timings meaningless" if name == "pprof_py"
+                 and available.runnable and described.get("numba") is None else ""})
 display(spark.createDataFrame(rows))

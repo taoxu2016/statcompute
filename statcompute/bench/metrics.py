@@ -18,14 +18,22 @@ from typing import Any, Dict, List, Optional
 
 
 class SparkMetrics:
+    """Two sources for the same numbers: the UI's REST API and, where that is not reachable from
+    the driver, the status store behind it, read through py4j. Records say which was used."""
+
+    STAGE_FIELDS = ("numCompleteTasks", "executorRunTime", "executorCpuTime", "jvmGcTime", "shuffleWriteBytes",
+                    "shuffleReadBytes", "memoryBytesSpilled", "diskBytesSpilled", "resultSize", "peakExecutionMemory")
+
     def __init__(self, spark, timeout: float = 15.0):
         sc = spark.sparkContext
+        self._sc = sc
         self.base = None
         url = getattr(sc, "uiWebUrl", None)
         if url:
             self.base = f"{url.rstrip('/')}/api/v1/applications/{sc.applicationId}"
         self.timeout = timeout
 
+    # ---- REST ---------------------------------------------------------------------------------
     def _get(self, path: str) -> Optional[Any]:
         if not self.base:
             return None
@@ -35,10 +43,64 @@ class SparkMetrics:
         except Exception:
             return None
 
+    # ---- status store, through py4j ---------------------------------------------------------------
+    def _store(self):
+        return self._sc._jsc.sc().statusStore()
+
+    def _store_stages(self, group: str):
+        """(number of jobs in the group, their completed stages as dictionaries), or None."""
+        try:
+            store, gateway = self._store(), self._sc._gateway
+            jobs = store.jobsList(None)
+            ids, count = set(), 0
+            for i in range(jobs.size()):
+                job = jobs.apply(i)
+                label = job.jobGroup()
+                if label.isDefined() and str(label.get()) == group:
+                    count += 1
+                    stage_ids = job.stageIds()
+                    ids.update(int(stage_ids.apply(k)) for k in range(stage_ids.size()))
+            stages = store.stageList(None, False, False, gateway.new_array(gateway.jvm.double, 0), None)
+            done = []
+            for i in range(stages.size()):
+                stage = stages.apply(i)
+                if int(stage.stageId()) in ids and str(stage.status().toString()) == "COMPLETE":
+                    row = {"stageId": int(stage.stageId()), "attemptId": int(stage.attemptId())}
+                    row.update({name: int(getattr(stage, name)()) for name in self.STAGE_FIELDS})
+                    done.append(row)
+            return count, done
+        except Exception:
+            return None
+
+    def _store_task_times(self, stage_id: int, attempt_id: int) -> Optional[List[float]]:
+        try:
+            gateway = self._sc._gateway
+            quantiles = gateway.new_array(gateway.jvm.double, 3)
+            quantiles[0], quantiles[1], quantiles[2] = 0.5, 0.95, 1.0
+            summary = self._store().taskSummary(stage_id, attempt_id, quantiles)
+            if not summary.isDefined():
+                return None
+            run = summary.get().executorRunTime()
+            return [float(run.apply(i)) for i in range(3)]
+        except Exception:
+            return None
+
+    # ---- public -------------------------------------------------------------------------------
     def executors(self) -> Optional[Dict[str, Any]]:
         rows = self._get("executors")
         if rows is None:
-            return None
+            try:
+                listed = self._store().executorList(True)
+                rows = []
+                for i in range(listed.size()):
+                    e = listed.apply(i)
+                    peak = e.peakMemoryMetrics()
+                    rows.append({"id": str(e.id()), "isActive": bool(e.isActive()), "totalCores": int(e.totalCores()),
+                                 "maxMemory": int(e.maxMemory()),
+                                 "peakMemoryMetrics": {"JVMHeapMemory": int(peak.get().getMetricValue("JVMHeapMemory"))}
+                                 if peak.isDefined() else {}})
+            except Exception:
+                return None
         workers = [r for r in rows if r.get("id") != "driver" and r.get("isActive", True)]
         peaks = [r.get("peakMemoryMetrics", {}).get("JVMHeapMemory") for r in workers]
         peaks = [v for v in peaks if v is not None]
@@ -50,17 +112,21 @@ class SparkMetrics:
         }
 
     def collect(self, group: str) -> Optional[Dict[str, Any]]:
-        """Totals over the completed stages of the jobs in `group`; None if the UI cannot be read."""
-        jobs = self._get("jobs")
-        stages = self._get("stages")
-        if jobs is None or stages is None:
-            return None
-        mine = [j for j in jobs if j.get("jobGroup") == group]
-        ids = {s for j in mine for s in j.get("stageIds", [])}
-        done = [s for s in stages if s.get("stageId") in ids and s.get("status") == "COMPLETE"]
+        """Totals over the completed stages of the jobs in `group`; None if neither source answers."""
+        jobs, stages, source = self._get("jobs"), self._get("stages"), "rest"
+        if jobs is not None and stages is not None:
+            mine = [j for j in jobs if j.get("jobGroup") == group]
+            ids = {s for j in mine for s in j.get("stageIds", [])}
+            count, done = len(mine), [s for s in stages if s.get("stageId") in ids and s.get("status") == "COMPLETE"]
+        else:
+            found, source = self._store_stages(group), "status_store"
+            if found is None:
+                return None
+            count, done = found
         total = lambda key: sum(float(s.get(key, 0) or 0) for s in done)  # noqa: E731
         out: Dict[str, Any] = {
-            "jobs": len(mine),
+            "source": source,
+            "jobs": count,
             "stages": len(done),
             "tasks": int(total("numCompleteTasks")),
             "executor_run_s": total("executorRunTime") / 1e3,
@@ -76,8 +142,11 @@ class SparkMetrics:
         heavy = sorted(done, key=lambda s: -(s.get("executorRunTime", 0) or 0))[:10]
         spreads: List[Dict[str, Any]] = []
         for s in heavy:
-            summary = self._get(f"stages/{s['stageId']}/{s.get('attemptId', 0)}/taskSummary?quantiles=0.5,0.95,1.0")
-            run = (summary or {}).get("executorRunTime")
+            attempt = s.get("attemptId", 0)
+            if source == "rest":
+                run = (self._get(f"stages/{s['stageId']}/{attempt}/taskSummary?quantiles=0.5,0.95,1.0") or {}).get("executorRunTime")
+            else:
+                run = self._store_task_times(s["stageId"], attempt)
             if run and len(run) == 3 and run[0] > 0:
                 spreads.append({"stage": s["stageId"], "tasks": s.get("numCompleteTasks"),
                                 "median_task_s": run[0] / 1e3, "p95_task_s": run[1] / 1e3,

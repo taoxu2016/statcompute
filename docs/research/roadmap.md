@@ -1,8 +1,8 @@
 # Computational modernization of classical statistical models: research roadmap
 
-**Version** 0.5, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
+**Version** 0.6, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
 
-> **Versions 0.4 and 0.5 follow the maintainer's instructions of 2026-11-14 on the workspace** (0.5 corrects the list of reference packages). The work moves to a new, independent repository, `statcompute`, where this document now lives. pprof (R), pprof_py and pprof_spark are read-only references: track A is implemented in the new repository's engine, not in pprof_spark. The standard cluster is now stated as a 32 GB driver, 10 workers of 16 GB and Databricks Runtime 17.3 LTS (Apache Spark 4.0.0), to be confirmed. Decisions 5 and 7 and F-1's preconditions change accordingly; the review and the opportunities do not. Where this document says "the repository" in sections 2 to 7, it means pprof_spark, the reference that was read.
+> **Versions 0.4 and 0.5 follow the maintainer's instructions of 2026-11-14 on the workspace** (0.5 corrects the list of reference packages). The work moves to a new, independent repository, `statcompute`, where this document now lives. pprof (R), pprof_py and pprof_spark are read-only references: track A is implemented in the new repository's engine, not in pprof_spark. The standard cluster is a 32 GB driver, 10 workers of 16 GB (confirmed 2026-11-14; version 0.6) and Databricks Runtime 17.3 LTS (Apache Spark 4.0.0). Decisions 5 and 7 and F-1's preconditions change accordingly; the review and the opportunities do not. Where this document says "the repository" in sections 2 to 7, it means pprof_spark, the reference that was read.
 
 > **Version 0.3 uses the six rows of `scale-first-look.csv` that the maintainer supplied** (2026-11-14). F-1 is rewritten around them. Summary items 3 and 8, step 0 in section 8.2 and decision 5 change with it. Nothing else does.
 
@@ -576,7 +576,7 @@ Likely venues are the computational statistics and statistical software journals
 2. **The estimate at the bound (F-6).** Confirm that the validated definition is the root of SerBIN's reduced system, and whether to register its distance from the bounded maximum-likelihood estimate.
 3. **A convergence class (F-10).** Add T-conv to §8.4 of the project context, with a bound calibrated on the fixtures.
 4. **Design facts, in aggregate only.** The share of indicator columns and their typical prevalence; the share of rows with entry times; the number of distinct event times per stratum; the size of the largest stratum and provider; which outputs a production job requests.
-5. **The benchmark environment.** Stated on 2026-11-14 as a 32 GB driver, 10 workers of 16 GB and Runtime 17.3 LTS, to be confirmed. Still needed: that the cluster is of fixed size, and whether pprof_spark, whose JAR targets Spark 4.1, is to be benchmarked as built or rebuilt for Spark 4.0 by the maintainer.
+5. **The benchmark environment.** Confirmed by the maintainer on 2026-11-14: the cluster has 10 workers of 16 GB (it used to have 30); the target runtime is 17.3 LTS. Still needed: that the cluster is of fixed size, and whether pprof_spark, whose JAR targets Spark 4.1, is to be benchmarked as built or rebuilt for Spark 4.0 by the maintainer.
 6. **The first second-wave project.** O-7, O-8 or the inference track, once their probes report.
 7. **Where the research record lives.** Answered on 2026-11-14: in a repository of its own. Proposed name `statcompute`; the register, the probes and this document are in its `docs/research/` and `statcompute/lab/probes/`.
 

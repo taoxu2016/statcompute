@@ -5,9 +5,10 @@ independent workspace of the project: new algorithms are tried here, the existin
 are benchmarked here on equal terms, and the next Spark implementation of provider profiling will
 be built here.
 
-**Status, version 0.1.0 (2026-11-14).** The benchmark framework, two prototypes of the recommended
-algorithms and the documentation exist and pass their tests in a local Spark 4.0 session. Nothing
-has run on Databricks yet, and the new engine is not started. `STATUS.md` has the details.
+**Status, version 0.2.0 (2026-11-14).** The benchmark framework, adapters for the three reference
+packages, two prototypes of the recommended algorithms and the documentation exist and pass their
+tests in a local Spark 4.0 session. Nothing has run on Databricks yet, and the new engine is not
+started. `STATUS.md` has the details; `docs/databricks-runbook.md` is the next thing to do.
 
 ## Three rules
 
@@ -36,7 +37,7 @@ has run on Databricks yet, and the new engine is not started. `STATUS.md` has th
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 23 tests, about two minutes
+pytest -q                                     # 26 tests, about two minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```
@@ -49,7 +50,7 @@ that run the R package unless `Rscript` finds `pprof`.
 
 `docs/databricks-runbook.md` gives the steps. In short: a fixed-size cluster on Runtime 17.3 LTS in
 dedicated access mode; open the repository as a Git folder; run `notebooks/databricks/00_environment`,
-`01_generate`, `02_run` and `03_report` in that order, starting at 5 million rows.
+then the `smoke` plan through `01_generate`, `02_run` and `03_report`, then the larger plans.
 
 ## Documents
 
