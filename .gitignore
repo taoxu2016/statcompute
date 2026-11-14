@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+spark-warehouse/
+metastore_db/
+derby.log
+.idea/
+.vscode/
+# datasets are regenerated from their specifications, never committed
+/data/

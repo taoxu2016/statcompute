@@ -1,0 +1,62 @@
+{
+ "name": "laptop",
+ "description": "A few minutes on one machine: 200,000 rows and 400 providers at 20 and 50 features. Exercises the harness with timings that mean something per row, not per cluster.",
+ "datasets": [
+  {
+   "family": "cox",
+   "rows": 200000,
+   "providers": 400,
+   "features": 20,
+   "design": "simple"
+  },
+  {
+   "family": "logistic_fe",
+   "rows": 200000,
+   "providers": 400,
+   "features": 20,
+   "design": "simple"
+  },
+  {
+   "family": "cox",
+   "rows": 200000,
+   "providers": 400,
+   "features": 50,
+   "design": "simple"
+  },
+  {
+   "family": "logistic_fe",
+   "rows": 200000,
+   "providers": 400,
+   "features": 50,
+   "design": "simple"
+  }
+ ],
+ "models": {
+  "cox": [
+   {
+    "family": "cox",
+    "ties": "breslow",
+    "strata": "provider",
+    "convergence": "tight"
+   }
+  ],
+  "logistic_fe": [
+   {
+    "family": "logistic_fe",
+    "convergence": "tight"
+   }
+  ]
+ },
+ "adapters": [
+  "pprof_spark",
+  "lab_spark",
+  "pprof_py",
+  "pprof_r",
+  "lab_numpy"
+ ],
+ "repeats": 1,
+ "options": {
+  "driver_memory_fraction": 0.6,
+  "clear_cache": true
+ }
+}

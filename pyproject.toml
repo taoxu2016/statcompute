@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "statcompute"
+version = "0.1.0"
+description = "Estimator-preserving computation for classical statistical models: prototypes, validation and benchmarks"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pyspark>=4.0,<4.1", "pandas>=2", "pyarrow>=11", "psutil"]
+
+[tool.setuptools.packages.find]
+include = ["statcompute*"]
+
+[tool.setuptools.package-data]
+"statcompute.bench" = ["plans/*.json"]
+"statcompute.references" = ["REFERENCES.lock", "*.R"]
+"statcompute.lab" = ["probes/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning", "ignore:.*copy keyword is deprecated.*"]

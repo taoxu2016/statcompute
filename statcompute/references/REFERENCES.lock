@@ -1,0 +1,30 @@
+{
+ "note": "Read-only reference implementations. This repository never modifies them: adapters call the packages as installed, at the commits below. Change a commit only together with a rerun of the comparisons that cite it.",
+ "updated": "2026-11-14",
+ "references": {
+  "pprof_r": {
+   "repository": "https://github.com/UM-KevinHe/pprof",
+   "commit": "d780cf50e11e4e5ff9008f14732e35cf632762f0",
+   "version": "2.0.12",
+   "license": "MIT",
+   "inspected": "2026-11-13",
+   "role": "the R package: single-machine reference; fit_cox() fits through survival::coxph"
+  },
+  "pprof_py": {
+   "repository": "https://github.com/UM-KevinHe/pprof_py",
+   "commit": "94b5476398da262987b97ac6fec3bbb91b048731",
+   "version": "0.7.0",
+   "license": "MIT",
+   "inspected": "2026-11-13",
+   "role": "validated single-machine reference for Cox and logistic fixed-effect models"
+  },
+  "pprof_spark": {
+   "repository": "https://github.com/UM-KevinHe/pprof_spark",
+   "commit": "e5c94840d12a9d249de4730369c899fe669f5e1e",
+   "version": "round 146",
+   "license": "MIT",
+   "inspected": "2026-11-13",
+   "role": "current Spark implementation; built for Spark 4.1 and Databricks Runtime 18"
+  }
+ }
+}

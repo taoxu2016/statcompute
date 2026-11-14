@@ -1,0 +1,61 @@
+{
+ "schema": 1,
+ "run_id": "45e5612a93d643cd",
+ "plan": "smoke",
+ "repeat": 0,
+ "statcompute": "0.1.0",
+ "started_at": "2026-11-14T17:19:17+00:00",
+ "finished_at": "2026-11-14T17:19:17+00:00",
+ "adapter": {
+  "name": "pprof_spark",
+  "kind": "spark",
+  "role": "reference",
+  "note": "ModuleNotFoundError: No module named 'pprof_spark'",
+  "pinned": {
+   "commit": "e5c94840d12a9d249de4730369c899fe669f5e1e",
+   "version": "round 146"
+  },
+  "matches_pin": null
+ },
+ "dataset": {
+  "id": "logistic_fe-n20000-m40-p6-simple-s79-ae3990f696",
+  "spec": {
+   "family": "logistic_fe",
+   "rows": 20000,
+   "providers": 40,
+   "features": 6,
+   "design": "simple",
+   "seed": 79,
+   "indicator_share": 0.5,
+   "indicator_prevalence": 0.3,
+   "correlation": 0.5,
+   "generator": "sc-synth",
+   "generator_version": 1
+  },
+  "rows": 20000,
+  "events": 6236,
+  "checksum": -1432340022735956370
+ },
+ "model": {
+  "family": "logistic_fe",
+  "ties": "breslow",
+  "strata": "provider",
+  "convergence": "tight",
+  "max_iterations": null,
+  "label": "logistic_fe/tight"
+ },
+ "support": {
+  "status": "unsupported",
+  "notes": [
+   "pprof_spark is not usable in this session: ModuleNotFoundError: No module named 'pprof_spark'"
+  ]
+ },
+ "status": "unavailable",
+ "error": null,
+ "environment": null,
+ "timing": null,
+ "spark": null,
+ "process": null,
+ "fit": null,
+ "truth": null
+}

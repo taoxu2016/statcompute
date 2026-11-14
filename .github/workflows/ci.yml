@@ -1,0 +1,24 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "17"}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install
+        run: |
+          pip install -e ".[test]" scipy numba fast_poibin matplotlib
+          # the reference is installed at its pinned commit and is never modified
+          pip install --no-deps "git+https://github.com/UM-KevinHe/pprof_py@$(python -c 'from statcompute import references; print(references.lock()["references"]["pprof_py"]["commit"])')"
+      - name: Tests
+        run: pytest -q
+      - name: Smoke plan
+        run: |
+          python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
+          python -m statcompute.bench report --results-root /tmp/sc/results >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,252 @@
+{
+ "schema": 1,
+ "run_id": "7547139b0e4848fb",
+ "plan": "laptop",
+ "repeat": 0,
+ "statcompute": "0.1.0",
+ "started_at": "2026-11-14T17:20:35+00:00",
+ "finished_at": "2026-11-14T17:20:46+00:00",
+ "adapter": {
+  "name": "pprof_r",
+  "kind": "driver",
+  "role": "reference",
+  "version": "2.0.12",
+  "r": "R version 4.3.3 (2024-02-29)",
+  "pinned": {
+   "commit": "d780cf50e11e4e5ff9008f14732e35cf632762f0",
+   "version": "2.0.12"
+  },
+  "matches_pin": null
+ },
+ "dataset": {
+  "id": "logistic_fe-n200000-m400-p20-simple-s79-9bf14b58a7",
+  "spec": {
+   "family": "logistic_fe",
+   "rows": 200000,
+   "providers": 400,
+   "features": 20,
+   "design": "simple",
+   "seed": 79,
+   "indicator_share": 0.5,
+   "indicator_prevalence": 0.3,
+   "correlation": 0.5,
+   "generator": "sc-synth",
+   "generator_version": 1
+  },
+  "rows": 200000,
+  "events": 68080,
+  "checksum": 988024425870775161
+ },
+ "model": {
+  "family": "logistic_fe",
+  "ties": "breslow",
+  "strata": "provider",
+  "convergence": "tight",
+  "max_iterations": null,
+  "label": "logistic_fe/tight"
+ },
+ "support": {
+  "status": "exact",
+  "notes": [
+   "SerBIN on one thread; stops when the largest change in beta is below tol (default 1e-5); provider effects are bounded at the median +/- 10"
+  ]
+ },
+ "status": "ok",
+ "error": null,
+ "environment": {
+  "static": {
+   "spark_version": "4.0.1",
+   "application_id": "local-1794676781401",
+   "python": "3.12.3",
+   "driver_cores": 1,
+   "databricks": {
+    "runtime": null,
+    "cluster_id": null,
+    "worker_type": null,
+    "driver_type": null,
+    "workers_configured": null,
+    "min_workers": null,
+    "max_workers": null,
+    "scaling_type": null,
+    "photon": null
+   },
+   "spark_conf": {
+    "spark.sql.shuffle.partitions": "8",
+    "spark.sql.adaptive.enabled": "true",
+    "spark.sql.adaptive.coalescePartitions.enabled": "true",
+    "spark.sql.optimizer.canChangeCachedPlanOutputPartitioning": "false",
+    "spark.sql.codegen.maxFields": "100",
+    "spark.sql.ansi.enabled": "true",
+    "spark.executor.memory": null,
+    "spark.executor.cores": null,
+    "spark.driver.memory": null,
+    "spark.driver.maxResultSize": null,
+    "spark.default.parallelism": null,
+    "spark.master": "local[2]"
+   },
+   "driver_memory_bytes": 4186234880,
+   "numpy": "2.5.4",
+   "pandas": "3.0.6",
+   "pyarrow": "26.0.1",
+   "scipy": "1.18.1"
+  },
+  "before": {
+   "executors": 0,
+   "cores": 2,
+   "max_memory_bytes": 0,
+   "peak_jvm_heap_bytes_max": null,
+   "default_parallelism": 2
+  },
+  "after": {
+   "executors": 0,
+   "cores": 2,
+   "max_memory_bytes": 0,
+   "peak_jvm_heap_bytes_max": null,
+   "default_parallelism": 2
+  },
+  "cluster_changed": false
+ },
+ "timing": {
+  "wall_s": 10.636949160000029,
+  "phases": {
+   "load": 1.1688483419999898,
+   "export": 0.09220853599998691,
+   "r_read": 0.363,
+   "r_prepare": 0.07200000000000006,
+   "fit": 7.583
+  }
+ },
+ "spark": {
+  "jobs": 2,
+  "stages": 2,
+  "tasks": 3,
+  "executor_run_s": 0.771,
+  "executor_cpu_s": 0.198611411,
+  "gc_s": 0.048,
+  "shuffle_write_bytes": 0,
+  "shuffle_read_bytes": 0,
+  "memory_spilled_bytes": 0,
+  "disk_spilled_bytes": 0,
+  "result_bytes": 36787027,
+  "peak_execution_memory_bytes": 0,
+  "heaviest_stages": [
+   {
+    "stage": 61,
+    "tasks": 2,
+    "median_task_s": 0.385,
+    "p95_task_s": 0.385,
+    "max_task_s": 0.385,
+    "straggler_ratio": 1.0
+   },
+   {
+    "stage": 60,
+    "tasks": 1,
+    "median_task_s": 0.009,
+    "p95_task_s": 0.009,
+    "max_task_s": 0.009,
+    "straggler_ratio": 1.0
+   }
+  ],
+  "worst_straggler_ratio": 1.0,
+  "effective_cores_by_run_time": 0.07248318934336224,
+  "effective_cores_by_cpu_time": 0.01867183983043494,
+  "cpu_utilization": 0.00933591991521747
+ },
+ "process": {
+  "peak_rss_bytes": 428199936,
+  "peak_rss_with_children_bytes": 2162323456,
+  "cpu_s": 9.510000000000002,
+  "cores": 1,
+  "cpu_utilization": 0.8940533471535344
+ },
+ "fit": {
+  "feature_names": [
+   "x1",
+   "x2",
+   "x3",
+   "x4",
+   "x5",
+   "x6",
+   "x7",
+   "x8",
+   "x9",
+   "x10",
+   "x11",
+   "x12",
+   "x13",
+   "x14",
+   "x15",
+   "x16",
+   "x17",
+   "x18",
+   "x19",
+   "x20"
+  ],
+  "coefficients": [
+   -0.11081445801817759,
+   0.12864334092202645,
+   -0.10869064980544535,
+   0.09761638045563649,
+   -0.09809205018961342,
+   0.11840560093556672,
+   -0.11548236417301415,
+   0.12021962755885016,
+   -0.12344775079642632,
+   0.1253779018077917,
+   -0.11190739168162182,
+   0.11939017449273585,
+   -0.1345813856938477,
+   0.10562625334096305,
+   -0.10566309117741303,
+   0.11115592811324365,
+   -0.10739088152936134,
+   0.11268693021723053,
+   -0.10609274132982095,
+   0.12569445075932592
+  ],
+  "standard_errors": [
+   0.008278494638911782,
+   0.010412018704142044,
+   0.008278115988023298,
+   0.010438950010595853,
+   0.008275996885927497,
+   0.01041065265624992,
+   0.008268341290909111,
+   0.010430718129325604,
+   0.008261942387824314,
+   0.010419625812077867,
+   0.008253512019518065,
+   0.010429351338080808,
+   0.008276864592195584,
+   0.01043273670399359,
+   0.008276791329524066,
+   0.01045056261699029,
+   0.008264256865635061,
+   0.010409962083132464,
+   0.008269036542219929,
+   0.01042027686870138
+  ],
+  "log_likelihood": -124674.47420333744,
+  "iterations": 5,
+  "converged": true,
+  "settings": {
+   "algorithm": "SerBIN",
+   "tol": 1e-12,
+   "max_iter": 10000,
+   "bound": 10,
+   "stop": "beta",
+   "threads": 1,
+   "cutoff": 0
+  },
+  "extras": {
+   "peak_r_mb": 272.6,
+   "r_version": "4.3.3",
+   "pprof_version": "2.0.12",
+   "survival_version": "3.5.8"
+  }
+ },
+ "truth": {
+  "max_abs_z": 2.7520067007422138,
+  "recovered": true
+ }
+}

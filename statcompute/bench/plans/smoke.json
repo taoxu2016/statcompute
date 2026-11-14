@@ -1,0 +1,55 @@
+{
+ "name": "smoke",
+ "description": "Seconds on a laptop or a CI runner: every code path, no meaningful timing.",
+ "datasets": [
+  {
+   "family": "cox",
+   "rows": 20000,
+   "providers": 40,
+   "features": 6,
+   "design": "simple"
+  },
+  {
+   "family": "logistic_fe",
+   "rows": 20000,
+   "providers": 40,
+   "features": 6,
+   "design": "simple"
+  },
+  {
+   "family": "cox",
+   "rows": 20000,
+   "providers": 40,
+   "features": 8,
+   "design": "correlated"
+  }
+ ],
+ "models": {
+  "cox": [
+   {
+    "family": "cox",
+    "ties": "breslow",
+    "strata": "provider",
+    "convergence": "tight"
+   }
+  ],
+  "logistic_fe": [
+   {
+    "family": "logistic_fe",
+    "convergence": "tight"
+   }
+  ]
+ },
+ "adapters": [
+  "pprof_spark",
+  "lab_spark",
+  "pprof_py",
+  "pprof_r",
+  "lab_numpy"
+ ],
+ "repeats": 1,
+ "options": {
+  "driver_memory_fraction": 0.6,
+  "clear_cache": true
+ }
+}

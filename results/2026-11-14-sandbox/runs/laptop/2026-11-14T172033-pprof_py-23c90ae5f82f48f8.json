@@ -1,0 +1,244 @@
+{
+ "schema": 1,
+ "run_id": "23c90ae5f82f48f8",
+ "plan": "laptop",
+ "repeat": 0,
+ "statcompute": "0.1.0",
+ "started_at": "2026-11-14T17:20:33+00:00",
+ "finished_at": "2026-11-14T17:20:35+00:00",
+ "adapter": {
+  "name": "pprof_py",
+  "kind": "driver",
+  "role": "reference",
+  "version": "0.7.0",
+  "numba": "0.68.1",
+  "numpy": "2.5.4",
+  "pinned": {
+   "commit": "94b5476398da262987b97ac6fec3bbb91b048731",
+   "version": "0.7.0"
+  },
+  "matches_pin": null
+ },
+ "dataset": {
+  "id": "logistic_fe-n200000-m400-p20-simple-s79-9bf14b58a7",
+  "spec": {
+   "family": "logistic_fe",
+   "rows": 200000,
+   "providers": 400,
+   "features": 20,
+   "design": "simple",
+   "seed": 79,
+   "indicator_share": 0.5,
+   "indicator_prevalence": 0.3,
+   "correlation": 0.5,
+   "generator": "sc-synth",
+   "generator_version": 1
+  },
+  "rows": 200000,
+  "events": 68080,
+  "checksum": 988024425870775161
+ },
+ "model": {
+  "family": "logistic_fe",
+  "ties": "breslow",
+  "strata": "provider",
+  "convergence": "tight",
+  "max_iterations": null,
+  "label": "logistic_fe/tight"
+ },
+ "support": {
+  "status": "exact",
+  "notes": [
+   "SerBIN; stops when the largest change in beta is below tol; provider effects are bounded at the median +/- 10"
+  ]
+ },
+ "status": "ok",
+ "error": null,
+ "environment": {
+  "static": {
+   "spark_version": "4.0.1",
+   "application_id": "local-1794676781401",
+   "python": "3.12.3",
+   "driver_cores": 1,
+   "databricks": {
+    "runtime": null,
+    "cluster_id": null,
+    "worker_type": null,
+    "driver_type": null,
+    "workers_configured": null,
+    "min_workers": null,
+    "max_workers": null,
+    "scaling_type": null,
+    "photon": null
+   },
+   "spark_conf": {
+    "spark.sql.shuffle.partitions": "8",
+    "spark.sql.adaptive.enabled": "true",
+    "spark.sql.adaptive.coalescePartitions.enabled": "true",
+    "spark.sql.optimizer.canChangeCachedPlanOutputPartitioning": "false",
+    "spark.sql.codegen.maxFields": "100",
+    "spark.sql.ansi.enabled": "true",
+    "spark.executor.memory": null,
+    "spark.executor.cores": null,
+    "spark.driver.memory": null,
+    "spark.driver.maxResultSize": null,
+    "spark.default.parallelism": null,
+    "spark.master": "local[2]"
+   },
+   "driver_memory_bytes": 4186234880,
+   "numpy": "2.5.4",
+   "pandas": "3.0.6",
+   "pyarrow": "26.0.1",
+   "scipy": "1.18.1"
+  },
+  "before": {
+   "executors": 0,
+   "cores": 2,
+   "max_memory_bytes": 0,
+   "peak_jvm_heap_bytes_max": null,
+   "default_parallelism": 2
+  },
+  "after": {
+   "executors": 0,
+   "cores": 2,
+   "max_memory_bytes": 0,
+   "peak_jvm_heap_bytes_max": null,
+   "default_parallelism": 2
+  },
+  "cluster_changed": false
+ },
+ "timing": {
+  "wall_s": 1.482652895000001,
+  "phases": {
+   "load": 0.9317273259999865,
+   "fit": 0.5492928319999919
+  }
+ },
+ "spark": {
+  "jobs": 2,
+  "stages": 2,
+  "tasks": 3,
+  "executor_run_s": 0.663,
+  "executor_cpu_s": 0.185928822,
+  "gc_s": 0.046,
+  "shuffle_write_bytes": 0,
+  "shuffle_read_bytes": 0,
+  "memory_spilled_bytes": 0,
+  "disk_spilled_bytes": 0,
+  "result_bytes": 36787027,
+  "peak_execution_memory_bytes": 0,
+  "heaviest_stages": [
+   {
+    "stage": 59,
+    "tasks": 2,
+    "median_task_s": 0.332,
+    "p95_task_s": 0.332,
+    "max_task_s": 0.332,
+    "straggler_ratio": 1.0
+   },
+   {
+    "stage": 58,
+    "tasks": 1,
+    "median_task_s": 0.008,
+    "p95_task_s": 0.008,
+    "max_task_s": 0.008,
+    "straggler_ratio": 1.0
+   }
+  ],
+  "worst_straggler_ratio": 1.0,
+  "effective_cores_by_run_time": 0.4471714197138498,
+  "effective_cores_by_cpu_time": 0.12540279834006587,
+  "cpu_utilization": 0.06270139917003294
+ },
+ "process": {
+  "peak_rss_bytes": 497463296,
+  "peak_rss_with_children_bytes": 1878380544,
+  "cpu_s": 0.47999999999999865,
+  "cores": 1,
+  "cpu_utilization": 0.32374401427246957
+ },
+ "fit": {
+  "feature_names": [
+   "x1",
+   "x2",
+   "x3",
+   "x4",
+   "x5",
+   "x6",
+   "x7",
+   "x8",
+   "x9",
+   "x10",
+   "x11",
+   "x12",
+   "x13",
+   "x14",
+   "x15",
+   "x16",
+   "x17",
+   "x18",
+   "x19",
+   "x20"
+  ],
+  "coefficients": [
+   -0.11081445801817853,
+   0.1286433409220274,
+   -0.10869064980544633,
+   0.09761638045563756,
+   -0.09809205018961442,
+   0.11840560093556769,
+   -0.11548236417301513,
+   0.12021962755885118,
+   -0.1234477507964275,
+   0.12537790180779282,
+   -0.11190739168162286,
+   0.11939017449273691,
+   -0.13458138569384887,
+   0.10562625334096395,
+   -0.10566309117741404,
+   0.11115592811324466,
+   -0.10739088152936231,
+   0.11268693021723138,
+   -0.106092741329822,
+   0.125694450759327
+  ],
+  "standard_errors": [
+   0.008278494638911837,
+   0.010412018704141997,
+   0.008278115988023364,
+   0.010438950010595853,
+   0.008275996885927594,
+   0.010410652656249875,
+   0.00826834129090913,
+   0.010430718129325554,
+   0.008261942387824312,
+   0.01041962581207789,
+   0.008253512019518077,
+   0.010429351338080818,
+   0.00827686459219563,
+   0.01043273670399358,
+   0.008276791329524134,
+   0.010450562616990322,
+   0.008264256865635068,
+   0.010409962083132492,
+   0.008269036542219907,
+   0.010420276868701367
+  ],
+  "log_likelihood": -124674.47420333742,
+  "iterations": 5,
+  "converged": null,
+  "settings": {
+   "tol": 1e-12,
+   "bound": 10.0,
+   "backtrack": true
+  },
+  "extras": {
+   "providers": 400,
+   "excluded_providers": 0
+  }
+ },
+ "truth": {
+  "max_abs_z": 2.7520067007423394,
+  "recovered": true
+ }
+}
