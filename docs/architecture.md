@@ -44,7 +44,8 @@ An adapter also states where its arithmetic runs (`kind`: driver or spark), what
 reference, prototype or engine) and how much driver memory a fit needs (`driver_bytes`), which the
 runner checks before starting.
 
-Adapters today: `pprof_r`, `pprof_py`, `pprof_spark`, `lab_numpy`, `lab_spark`.
+Adapters today: `pprof_r`, `pprof_py`, `pprof_spark`, `pprof_spark_cached` (the same package with its
+input cached first), `lab_numpy`, `lab_spark`.
 
 ## How an algorithm moves
 

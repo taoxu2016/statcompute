@@ -36,7 +36,10 @@ def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "model": r["model"]["label"], "rows": spec["rows"], "providers": spec["providers"],
             "features": spec["features"], "design": spec["design"],
             "adapter": r["adapter"]["name"], "role": r["adapter"].get("role"), "repeat": r.get("repeat"),
-            "status": r["status"], "wall_s": None if not timing else round(timing["wall_s"], 2),
+            "status": r["status"],
+            "compare_s": None if not timing else round(
+                timing["wall_s"] if r["adapter"].get("kind") == "spark" else (timing.get("phases") or {}).get("fit", timing["wall_s"]), 2),
+            "wall_s": None if not timing else round(timing["wall_s"], 2),
             "fit_s": None if "fit" not in (timing.get("phases") or {}) else round(timing["phases"]["fit"], 2),
             "iterations": fit.get("iterations"), "converged": fit.get("converged"),
             "max_abs_z": None if not r.get("truth") or r["truth"]["max_abs_z"] is None else round(r["truth"]["max_abs_z"], 2),

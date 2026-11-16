@@ -2,7 +2,7 @@
 
 What each implementation supports for the two case studies, read from its source at the commit in
 `statcompute/references/REFERENCES.lock` (pprof `d780cf5`, pprof_py `94b5476`, pprof_spark
-`e5c9484`). "Read" means read in the source or its documentation; the last row of each table says
+`e5c9484`, whose code for these two models is unchanged at the pinned build `d0b9bd5`). "Read" means read in the source or its documentation; the last row of each table says
 what has actually been run here. A benchmark row is like-for-like only where the entries of the two
 implementations agree for the model that was run.
 
@@ -22,7 +22,7 @@ implementations agree for the model that was run.
 | Information matrix | survival's C code | Running risk-set sums with second moments per event time | The same, with compensated sums | Weighted Gram matrix minus one rank-one term per event time |
 | Bitwise reproducible across partitionings | Not applicable | Not applicable | Yes, by design | No: BLAS |
 | Binding limit | Driver memory: a data frame and its copies | Driver memory: X and a centred copy | CPU per pass; driver budget for block partials | `lab_numpy`: driver memory. `lab_spark`: one partition per Python worker |
-| Run in this repository | Yes: `tests/test_references.py` | Yes | Adapter against a mock only (OI-04) | Yes |
+| Run in this repository | Yes: `tests/test_references.py` | Yes | Yes, on Databricks on 2026-11-16: within 1e-15 of pprof_py at 5 million rows | Yes |
 
 ## Logistic regression with provider fixed effects
 
@@ -38,7 +38,7 @@ implementations agree for the model that was run.
 | Variance of beta | Inverse of the reduced information | The same | The same | The same |
 | Provider tests, standardized measures | Yes | Yes | Yes | No |
 | Binding limit | Driver memory | Driver memory: X, a stacked copy and q*X | CPU per pass; provider effects on the driver | As for Cox |
-| Run in this repository | Yes | Yes | Adapter against a mock only | Yes |
+| Run in this repository | Yes | Yes | Yes, on Databricks on 2026-11-16 | Yes |
 
 ## Consequences for the benchmarks
 

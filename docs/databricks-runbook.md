@@ -12,7 +12,7 @@ problems; send the error text back and it gets fixed.
 | Workers | 10. Fixed if you can: clear Enable autoscaling, or set the minimum equal to the maximum. Otherwise see "If the cluster autoscales" | A timing on a cluster that changes size measures the autoscaler as much as the code |
 | Access mode | Dedicated (single user) | pprof_spark's Python wrappers need py4j |
 | Runtime | 17.3 LTS | The target of this project (D-03) |
-| Photon | Off, or noted | pprof_spark runs typed Dataset code, which Photon does not execute |
+| Photon | As the cluster has it | The cluster as it is is the target. With Photon on, executors have a heap of 2.2 GB; records say so |
 
 ### If the cluster autoscales
 
@@ -88,9 +88,10 @@ packages agree on this cluster.
 
 1. `01_generate` with `plan` = `standard` and `max_rows` = 5000000: four datasets of about 7 GB each
    before compression.
-2. `02_run` with the same settings. Two repeats per implementation and dataset.
-3. `03_report`.
-4. Once more with `cache_input` = `true`, to see what pprof_spark's repeated reads of its input cost.
+2. `02_run` with the same settings. Two repeats per implementation and dataset. The Spark
+   implementations run first, back to back; pprof_spark runs twice, from the stored table and with
+   its input cached first (`pprof_spark_cached`).
+3. `03_report`. Compare the column `compare_s`.
 
 At 180 features the single-machine packages do not fit a 32 GB driver next to Spark's own JVM, and
 the memory guard skips them. To compare them at 5 million rows, run plan `width` (50, 100 and 180

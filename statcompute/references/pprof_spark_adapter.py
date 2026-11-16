@@ -14,6 +14,8 @@ from ..testkit.specs import COX
 
 class PprofSpark(Adapter):
     name, kind, role = "pprof_spark", "spark", "reference"
+    pin = "pprof_spark"          # the entry of REFERENCES.lock this adapter is checked against
+    cache_input = False          # fit from the stored table, as a production job would
 
     def describe(self, spark=None):
         info = {"name": self.name, "kind": self.kind, "role": self.role}
@@ -49,16 +51,20 @@ class PprofSpark(Adapter):
 
         names = dataset.spec.feature_names()
         frame = dataset.frame(spark)
-        phases, caveats = {}, []
-        if self.options.get("cache_input"):
-            # pprof_spark reads its input several times while it prepares; its own scale notebook caches it first
+        phases, caveats, facts = {}, [], {}
+        cached = bool(self.cache_input or self.options.get("cache_input"))
+        if cached:
+            # pprof_spark reads its input several times while it prepares; its own notebooks cache it first
             before = clock.perf_counter()
             frame = frame.persist()
             frame.count()
             phases["cache_input"] = clock.perf_counter() - before
-        version = getattr(spark, "version", "") or ""
-        if version and not version.startswith("4.1"):
-            caveats.append(f"pprof_spark's JAR targets Spark 4.1; this session runs Spark {version}")
+        try:
+            facts["spark_version"] = spark.version
+            facts["photon"] = str(spark.conf.get("spark.databricks.photon.enabled", "false")).lower() == "true"
+            facts["executor_heap"] = spark.sparkContext.getConf().get("spark.executor.memory", None)
+        except Exception:
+            pass
         started = clock.perf_counter()
         if model.family == COX:
             options = {"ties": model.ties, "row_id": "id"}
@@ -77,6 +83,11 @@ class PprofSpark(Adapter):
                 options["max_iter"] = model.max_iterations
             fitted = pprof_spark.LogisticFixedEffect("y", names, "provider", **options).fit(frame)
         elapsed = clock.perf_counter() - started
+        if cached:
+            try:
+                frame.unpersist()
+            except Exception:
+                pass
         by_name = {c.feature: c for c in fitted.coefficients}
         summary = getattr(fitted, "summary", {}) or {}
         return FitResult(
@@ -86,9 +97,10 @@ class PprofSpark(Adapter):
             float(fitted.log_likelihood),
             _optional(int, getattr(fitted, "iterations", summary.get("iterations"))),
             _optional(bool, getattr(fitted, "converged", summary.get("converged"))),
-            dict(options, cache_input=bool(self.options.get("cache_input"))),
+            dict(options, cache_input=cached),
             dict(phases, fit=elapsed),
-            {"halvings": getattr(fitted, "halvings", None), "warnings": getattr(fitted, "warnings", None)},
+            {"halvings": getattr(fitted, "halvings", None), "warnings": getattr(fitted, "warnings", None),
+             "summary": summary if isinstance(summary, dict) and len(str(summary)) < 20000 else None, **facts},
             caveats,
         )
 
@@ -97,4 +109,12 @@ def _optional(kind, value):
     return None if value is None else kind(value)
 
 
+class PprofSparkCached(PprofSpark):
+    """The same package, given its input the way its own notebooks give it: cached first. The time to
+    cache is reported as its own phase and counts in the whole call."""
+    name = "pprof_spark_cached"
+    cache_input = True
+
+
 register("pprof_spark", PprofSpark)
+register("pprof_spark_cached", PprofSparkCached)

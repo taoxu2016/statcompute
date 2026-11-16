@@ -59,7 +59,9 @@ class LabNumpy(Adapter):
         return _support(model, spark_layout=False)
 
     def driver_bytes(self, model, data) -> int:
-        return footprint_bytes(data.rows, data.features, 1.2) + footprint_bytes(self.block_rows, data.features, 4.0)
+        # The matrix, the loader's chunks and slack. The first cluster run sampled peaks of 2.2 to 3.6 times the
+        # matrix, but those include memory the process still held from earlier fits.
+        return footprint_bytes(data.rows, data.features, 2.0) + footprint_bytes(self.block_rows, data.features, 4.0)
 
     def fit(self, spark, dataset, model) -> FitResult:
         spec = dataset.spec

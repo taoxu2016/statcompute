@@ -5,10 +5,11 @@ independent workspace of the project: new algorithms are tried here, the existin
 are benchmarked here on equal terms, and the next Spark implementation of provider profiling will
 be built here.
 
-**Status, version 0.3.0 (2026-11-14).** The benchmark framework, adapters for the three reference
-packages, two prototypes of the recommended algorithms and the documentation exist and pass their
-tests in a local Spark 4.0 session. Nothing has run on Databricks yet, and the new engine is not
-started. `STATUS.md` has the details; `docs/databricks-runbook.md` is the next thing to do.
+**Status, version 0.4.0 (2026-11-16).** The benchmark framework, adapters for the three reference
+packages and two prototypes of the recommended algorithms exist and pass their tests in a local
+Spark 4.0 session. The first cluster run is analysed in
+`docs/reports/2026-11-16-databricks-compare-5m.md`. The new engine is not started. `STATUS.md` has
+the details.
 
 ## Three rules
 

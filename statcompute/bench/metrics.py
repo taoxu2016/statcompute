@@ -65,7 +65,8 @@ class SparkMetrics:
             for i in range(stages.size()):
                 stage = stages.apply(i)
                 if int(stage.stageId()) in ids and str(stage.status().toString()) == "COMPLETE":
-                    row = {"stageId": int(stage.stageId()), "attemptId": int(stage.attemptId())}
+                    row = {"stageId": int(stage.stageId()), "attemptId": int(stage.attemptId()),
+                           "name": str(stage.name())}
                     row.update({name: int(getattr(stage, name)()) for name in self.STAGE_FIELDS})
                     done.append(row)
             return count, done
@@ -139,7 +140,7 @@ class SparkMetrics:
             "result_bytes": int(total("resultSize")),
             "peak_execution_memory_bytes": int(max((s.get("peakExecutionMemory", 0) or 0) for s in done)) if done else 0,
         }
-        heavy = sorted(done, key=lambda s: -(s.get("executorRunTime", 0) or 0))[:10]
+        heavy = sorted(done, key=lambda s: -(s.get("executorRunTime", 0) or 0))[:15]
         spreads: List[Dict[str, Any]] = []
         for s in heavy:
             attempt = s.get("attemptId", 0)
@@ -147,12 +148,14 @@ class SparkMetrics:
                 run = (self._get(f"stages/{s['stageId']}/{attempt}/taskSummary?quantiles=0.5,0.95,1.0") or {}).get("executorRunTime")
             else:
                 run = self._store_task_times(s["stageId"], attempt)
+            entry = {"stage": s["stageId"], "name": str(s.get("name") or "")[:120], "tasks": s.get("numCompleteTasks"),
+                     "run_s": (s.get("executorRunTime", 0) or 0) / 1e3, "cpu_s": (s.get("executorCpuTime", 0) or 0) / 1e9}
             if run and len(run) == 3 and run[0] > 0:
-                spreads.append({"stage": s["stageId"], "tasks": s.get("numCompleteTasks"),
-                                "median_task_s": run[0] / 1e3, "p95_task_s": run[1] / 1e3,
-                                "max_task_s": run[2] / 1e3, "straggler_ratio": run[2] / run[0]})
+                entry.update({"median_task_s": run[0] / 1e3, "p95_task_s": run[1] / 1e3,
+                              "max_task_s": run[2] / 1e3, "straggler_ratio": run[2] / run[0]})
+            spreads.append(entry)
         out["heaviest_stages"] = spreads
-        out["worst_straggler_ratio"] = max((s["straggler_ratio"] for s in spreads), default=None)
+        out["worst_straggler_ratio"] = max((s["straggler_ratio"] for s in spreads if "straggler_ratio" in s), default=None)
         return out
 
 
@@ -197,6 +200,10 @@ class ProcessSampler:
 
     def __enter__(self):
         self._start_cpu = self._cpu()
+        try:
+            self.start_rss = self._process.memory_info().rss
+        except Exception:
+            self.start_rss = None
         if self._process is not None:
             self._thread = threading.Thread(target=self._loop, daemon=True)
             self._thread.start()
@@ -215,7 +222,8 @@ class ProcessSampler:
         if self._process is None:
             return None
         cores = os.cpu_count() or 1
-        return {"peak_rss_bytes": int(self.peak_rss), "peak_rss_with_children_bytes": int(self.peak_tree),
+        return {"rss_at_start_bytes": self.start_rss, "peak_rss_bytes": int(self.peak_rss),
+                "peak_rss_with_children_bytes": int(self.peak_tree),
                 "cpu_s": self.cpu_s, "cores": cores,
                 "cpu_utilization": None if not self.cpu_s or wall_s <= 0 else self.cpu_s / (wall_s * cores)}
 

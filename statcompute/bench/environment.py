@@ -14,6 +14,8 @@ SPARK_KEYS = [
     "spark.sql.optimizer.canChangeCachedPlanOutputPartitioning", "spark.sql.codegen.maxFields",
     "spark.sql.ansi.enabled", "spark.executor.memory", "spark.executor.cores", "spark.driver.memory",
     "spark.driver.maxResultSize", "spark.default.parallelism", "spark.master",
+    "spark.memory.offHeap.enabled", "spark.memory.offHeap.size", "spark.sql.files.maxPartitionBytes",
+    "spark.databricks.photon.enabled", "spark.locality.wait",
 ]
 DATABRICKS_TAGS = {
     "runtime": "spark.databricks.clusterUsageTags.sparkVersion",
@@ -91,7 +93,7 @@ def attached(spark):
 
 
 def hold_at(spark, executors: int, timeout_s: float = 900.0, task_seconds: float = 15.0,
-            allow_local: bool = False) -> Dict[str, Any]:
+            allow_local: bool = False, log=print) -> Dict[str, Any]:
     """Ask an autoscaling cluster for `executors` workers and wait until they are attached.
 
     The autoscaler adds workers when tasks are waiting, so this submits rounds of sleeping tasks,
@@ -99,15 +101,19 @@ def hold_at(spark, executors: int, timeout_s: float = 900.0, task_seconds: float
     autoscaler from removing workers later; the runner samples the count during every fit for that.
     """
     sc = spark.sparkContext
-    out = {"target": int(executors), "reached": None, "seconds": 0.0, "rounds": 0}
+    out = {"target": int(executors), "reached": None, "seconds": 0.0, "rounds": 0, "seen": []}
     if sc.master.startswith("local") and not allow_local:
         return dict(out, skipped="local session")
     started = time.perf_counter()
     current = attached(spark)[0]
+    out["seen"].append([0.0, current])
     while (current is None or current < executors) and time.perf_counter() - started < timeout_s:
         tasks = max(8 * int(executors), 2 * sc.defaultParallelism)
         sc.setJobGroup("statcompute-warmup", f"asking the autoscaler for {executors} executors")
         sc.parallelize(range(tasks), tasks).foreach(lambda _, s=task_seconds: __import__("time").sleep(s))
         out["rounds"] += 1
         current = attached(spark)[0]
+        out["seen"].append([round(time.perf_counter() - started, 1), current])     # executors after each round
+        if log is not None:
+            log(f"warm-up: {current} of {executors} executors after {time.perf_counter() - started:.0f} s")
     return dict(out, reached=current, seconds=time.perf_counter() - started)

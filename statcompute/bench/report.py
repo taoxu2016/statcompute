@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from ..validation import compare_records
 from .results import summary, to_markdown
 
-TIMING = ["model", "rows", "features", "design", "adapter", "role", "status", "wall_s", "fit_s", "iterations",
+TIMING = ["model", "rows", "features", "design", "adapter", "role", "status", "compare_s", "wall_s", "fit_s", "iterations",
           "executors", "tasks", "effective_cores", "share_of_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
           "driver_peak_rss_gb", "cluster_changed", "caveats", "note"]
 AGREEMENT = ["dataset", "model", "adapter", "reference", "like_for_like", "max_abs_coefficient_difference",
@@ -27,8 +27,10 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
                            "driver_memory_gb": None if not static.get("driver_memory_bytes")
                            else round(static["driver_memory_bytes"] / 1e9, 1)}]),
              "## Runs\n",
-             "A run with an entry under `caveats` is not a fair timing. A status of `running` means the process died during that fit, "
-             "typically because the driver ran out of memory.\n",
+             "`compare_s` is the number to compare: for a Spark implementation the whole call from the stored table (its own "
+             "preparation included, whichever phase it reports it under); for a single-machine one the fit alone, with the data "
+             "already in memory. A run with an entry under `caveats` is not a fair timing. A status of `running` means the "
+             "process died during that fit, typically because the driver ran out of memory.\n",
              to_markdown(summary(records), TIMING),
              f"## Numerical agreement with {reference}\n",
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. "

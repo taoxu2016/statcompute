@@ -42,6 +42,7 @@
  },
  "adapters": [
   "pprof_spark",
+  "pprof_spark_cached",
   "lab_spark",
   "pprof_py",
   "pprof_r",

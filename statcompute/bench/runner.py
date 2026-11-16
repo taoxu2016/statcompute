@@ -82,7 +82,7 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
     adapter = adapters.get(adapter_name)
     adapter.options = dict(options)
     record["adapter"] = adapter.describe(spark)
-    pinned = (references.lock().get("references") or {}).get(adapter_name)
+    pinned = (references.lock().get("references") or {}).get(getattr(adapter, "pin", None) or adapter_name)
     if pinned:
         found = record["adapter"].get("commit")
         record["adapter"]["pinned"] = {k: pinned.get(k) for k in ("commit", "version")}
@@ -113,6 +113,11 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         # an autoscaling cluster: ask for its full size before the clock starts
         record["warmup"] = environment.hold_at(spark, int(options["hold_executors"]),
                                                float(options.get("hold_timeout_s", 900)))
+    if adapter.kind == "spark":
+        try:
+            record["dataset"]["input_partitions"] = int(dataset.frame(spark).rdd.getNumPartitions())
+        except Exception:
+            record["dataset"]["input_partitions"] = None
     before = environment.moving(spark)
     timed_out = threading.Event()
     timer = None
@@ -170,6 +175,11 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         except Exception:
             pass
     gc.collect()
+    try:                                  # hand freed memory back to the system, so the next run's peak is its own
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
     caveats = [] if fit is None else list(fit.caveats)
     if moved:
         low, high = during.get("executors_min"), during.get("executors_max")
@@ -223,15 +233,27 @@ def run_plan(spark, plan: Dict[str, Any], data_root: str, results_root: str,
     `only_adapters`, `max_rows` and `families` narrow a plan without editing it."""
     options = dict(plan.get("options", {}))
     chosen = [a for a in plan["adapters"] if only_adapters is None or a in set(only_adapters)]
-    records = []
-    for entry in plan["datasets"]:
-        spec = DatasetSpec.from_dict(entry)
-        if (max_rows and spec.rows > max_rows) or (families and spec.family not in set(families)):
-            continue
-        dataset = materialize(spark, spec, data_root)
-        for model_entry in plan["models"].get(spec.family, []):
-            model = ModelSpec.from_dict(model_entry)
-            for adapter_name in chosen:
+    # Two passes unless the plan says otherwise: every Spark implementation on every dataset first,
+    # then the single-machine ones. A single-machine fit leaves the executors idle for minutes, and
+    # an autoscaling cluster shrinks under it; run in between, it left the next Spark fit short.
+    kinds = {name: adapters.get(name).kind for name in chosen}
+    passes = ([[a for a in chosen if kinds[a] == "spark"], [a for a in chosen if kinds[a] != "spark"]]
+              if options.get("spark_first", True) else [chosen])
+    work = []
+    for group in passes:
+        for entry in plan["datasets"]:
+            spec = DatasetSpec.from_dict(entry)
+            if (max_rows and spec.rows > max_rows) or (families and spec.family not in set(families)):
+                continue
+            for model_entry in plan["models"].get(spec.family, []):
+                work.append((spec, ModelSpec.from_dict(model_entry), group))
+    records, stored = [], {}
+    for spec, model, group in work:
+        if group:
+            if spec.dataset_id() not in stored:
+                stored[spec.dataset_id()] = materialize(spark, spec, data_root)
+            dataset = stored[spec.dataset_id()]
+            for adapter_name in group:
                 for repeat in range(int(plan.get("repeats", 1))):
                     record = run_one(spark, plan["name"], adapter_name, dataset, model, repeat, options,
                                      checkpoint=lambda partial: write_record(results_root, partial))

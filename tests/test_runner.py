@@ -31,6 +31,12 @@ def test_a_plan_records_every_outcome(spark, tmp_path):
     records = run_plan(spark, PLAN, str(tmp_path / "data"), str(tmp_path / "results"))
     by = {r["adapter"]["name"]: r for r in records}
     assert [by[n]["status"] for n in PLAN["adapters"]] == ["ok", "failed", "ok", "unavailable"]
+    # every Spark implementation runs before any single-machine one, whatever the plan's order
+    assert [r["adapter"]["name"] for r in records] == ["lab_spark", "pprof_spark", "lab_numpy", "always_fails"]
+    assert by["lab_spark"]["dataset"]["input_partitions"] >= 1 and "input_partitions" not in by["lab_numpy"]["dataset"]
+    rows = {row["adapter"]: row for row in summary(records)}
+    assert rows["lab_spark"]["compare_s"] == rows["lab_spark"]["wall_s"]        # the whole call, preparation included
+    assert rows["lab_numpy"]["compare_s"] == rows["lab_numpy"]["fit_s"] < rows["lab_numpy"]["wall_s"]
     failed = by["always_fails"]
     assert failed["fit"] is None and failed["truth"] is None and "boom" in failed["error"]["message"]
     assert by["lab_spark"]["fit"]["coefficients"] and by["lab_spark"]["run_id"] != by["lab_numpy"]["run_id"]
@@ -39,6 +45,8 @@ def test_a_plan_records_every_outcome(spark, tmp_path):
     metrics = by["lab_spark"]["spark"]
     if metrics is not None:                      # the UI's REST API was reachable
         assert metrics["jobs"] > 0 and metrics["tasks"] > 0 and metrics["executor_run_s"] > 0
+        heaviest = metrics["heaviest_stages"][0]
+        assert heaviest["name"] and heaviest["tasks"] >= 1 and heaviest["run_s"] >= 0
     loaded = load_records(str(tmp_path / "results"))
     assert len(loaded) == 4 and len(summary(loaded)) == 4
     comparisons = compare_records(loaded, reference="lab_numpy")
@@ -76,11 +84,25 @@ def test_the_pprof_spark_adapter_maps_options_and_results(monkeypatch):
     fake.CoxPH, fake.api, fake.__version__ = CoxPH, (lambda spark: object()), "0.0-test"
     monkeypatch.setitem(sys.modules, "pprof_spark", fake)
 
+    class Frame:
+        events = []
+
+        def persist(self):
+            self.events.append("persist")
+            return self
+
+        def count(self):
+            self.events.append("count")
+            return 100
+
+        def unpersist(self):
+            self.events.append("unpersist")
+
     class Stored:
         spec = DatasetSpec("cox", 100, 5, 2)
 
         def frame(self, spark):
-            return "frame"
+            return Frame()
 
     adapter = adapters.get("pprof_spark")
     assert adapter.available().runnable
@@ -89,6 +111,13 @@ def test_the_pprof_spark_adapter_maps_options_and_results(monkeypatch):
     assert result.iterations == 4 and result.converged is True and result.log_likelihood == -12.5
     assert calls["cox"] == ("time", "event", ["x1", "x2"],
                             {"ties": "breslow", "row_id": "id", "strata": "provider", "eps": 1e-13, "max_iterations": 50})
+    assert Frame.events == [] and result.settings["cache_input"] is False and "cache_input" not in result.phases
+    # the second adapter caches the input first, times that separately, and releases it
+    cached = adapters.get("pprof_spark_cached")
+    assert cached.pin == "pprof_spark" and cached.kind == "spark"
+    again = cached.fit(None, Stored(), ModelSpec("cox"))
+    assert Frame.events == ["persist", "count", "unpersist"] and again.settings["cache_input"] is True
+    assert again.phases["cache_input"] >= 0 and again.coefficients == [1.0, 2.0]
 
 
 def test_task_metrics_come_from_the_status_store_when_the_rest_api_is_closed(spark):
@@ -109,6 +138,7 @@ def test_task_metrics_come_from_the_status_store_when_the_rest_api_is_closed(spa
         time.sleep(0.25)
     assert out is not None and out["source"] == "status_store"
     assert out["jobs"] >= 1 and out["tasks"] >= 4 and out["executor_run_s"] >= 0
+    assert all(stage["name"] for stage in out["heaviest_stages"]) and out["heaviest_stages"]
     assert metrics.executors()["cores"] >= 1
     assert metrics.collect("no-such-group")["jobs"] == 0
 
@@ -170,8 +200,10 @@ def test_holding_a_cluster_at_size_runs_tasks_until_the_target_or_the_timeout(sp
 
     assert environment.hold_at(spark, 10)["skipped"] == "local session"
     assert environment.attached(spark) == (0, spark.sparkContext.defaultParallelism)
-    out = environment.hold_at(spark, 1, timeout_s=1.0, task_seconds=0.05, allow_local=True)   # a local session never gets there
+    said = []
+    out = environment.hold_at(spark, 1, timeout_s=1.0, task_seconds=0.05, allow_local=True, log=said.append)   # a local session never gets there
     assert out["target"] == 1 and out["reached"] == 0 and out["rounds"] >= 1
+    assert len(out["seen"]) == out["rounds"] + 1 and said and said[0].startswith("warm-up: 0 of 1 executors")
 
 
 def test_a_run_says_how_many_executors_it_had_and_flags_a_short_cluster(spark, tmp_path, monkeypatch):

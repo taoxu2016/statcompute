@@ -7,7 +7,7 @@ What is run, under which conditions, what is measured, and what may be concluded
 | Condition | Requirement | Checked by |
 |---|---|---|
 | Cluster size | Fixed for the whole plan where that is possible. On an autoscaling cluster the option `hold_executors` asks for full size before each Spark fit | Notebook `00_environment`; every record samples the executors attached during its fit (`environment.during`) and sets `cluster_changed` and a caveat when the count moved |
-| Standard cluster | 32 GB driver; 10 workers of 16 GB; Databricks Runtime 17.3 LTS | Recorded in every record |
+| Standard cluster | As it is: 32 GB driver; up to 10 workers of 16 GB; Databricks Runtime 17.3 LTS with Photon, which leaves the executors a heap of 2.2 GB | Recorded in every record |
 | Access mode | Dedicated (single user): pprof_spark's Python wrappers need py4j | `00_environment` |
 | Data | The stored synthetic table named in the record, with its checksum | Manifest |
 | Reference versions | The commits in `REFERENCES.lock`; a record says whether the session's build matches | `adapter.matches_pin` |
@@ -53,7 +53,8 @@ provider.
 
 | Quantity | Source | Caveat |
 |---|---|---|
-| Wall time of the fit | Driver clock around the adapter's `fit` | Includes the adapter's own data preparation; phases are reported separately where the adapter can separate them |
+| Wall time of the call | Driver clock around the adapter's `fit` | Includes the adapter's own data preparation; phases are reported separately where the adapter can separate them |
+| The time to compare, `compare_s` | For a Spark implementation the whole call from the stored table; for a single-machine one its fit phase, with the data already in memory | pprof_spark's fit includes its preparation and lab_spark's does not, so their fit phases must not be compared |
 | Phases | Inside the adapter: load, prepare, fit | Reference packages do not expose their internal phases |
 | Tasks, executor run time, executor CPU time, GC time, shuffle and spill bytes | Spark UI REST API for the run's job group, or the status store behind it through py4j where the API is closed; `spark.source` says which | Executor CPU time excludes Python workers; for `lab_spark` use run time |
 | Effective cores | Executor run time (or CPU time) divided by wall time | A measure of how much of the cluster a fit used |
@@ -90,9 +91,12 @@ records both numbers.
 Records are scrubbed when written, because the repository is public: the cluster identifier is
 hashed, and e-mail addresses and user folders are removed from messages and traces.
 
-pprof_spark reads its input several times while it prepares a fit. By default it is given the
-stored table, as a production job would; the option `cache_input` caches the table first and
-reports that time as its own phase.
+pprof_spark reads its input several times while it prepares a fit, and its own notebooks cache the
+input first. The plans therefore run it twice: `pprof_spark` is given the stored table, as a
+production job would be, and `pprof_spark_cached` caches the table first and counts that time.
+
+A plan runs every Spark implementation on every dataset first, then the single-machine ones. A
+single-machine fit leaves the executors idle, and an autoscaling cluster shrinks under it.
 
 ## 7. Plans
 

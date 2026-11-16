@@ -1,6 +1,6 @@
 # Computational modernization of classical statistical models: research roadmap
 
-**Version** 0.6, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
+**Version** 0.7, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
 
 > **Versions 0.4 and 0.5 follow the maintainer's instructions of 2026-11-14 on the workspace** (0.5 corrects the list of reference packages). The work moves to a new, independent repository, `statcompute`, where this document now lives. pprof (R), pprof_py and pprof_spark are read-only references: track A is implemented in the new repository's engine, not in pprof_spark. The standard cluster is a 32 GB driver, 10 workers of 16 GB (confirmed 2026-11-14; version 0.6) and Databricks Runtime 17.3 LTS (Apache Spark 4.0.0). Decisions 5 and 7 and F-1's preconditions change accordingly; the review and the opportunities do not. Where this document says "the repository" in sections 2 to 7, it means pprof_spark, the reference that was read.
 
@@ -149,6 +149,8 @@ Then add four items to step 0's exit measurement:
 4. tasks and blocks per pass.
 
 If the kernels account for less than half of wall time, the dominant term is fixed before step 2.
+
+*First recorded cluster run, 2026-11-16 (version 0.7).* On Runtime 17.3 with Photon and autoscaling, at 5 million rows and 50 and 100 features, pprof_spark's time did not follow the number of executors (a logistic fit took 112 s with 2 and 149 s with 9 to 10), it used 8 to 20 of 40 attached cores, and its executor CPU was 4 to 7 times what the study's kernel rates give for the passes [derived]. Explanation 3 therefore carries most of the weight at this size, and explanation 2 does not apply on Spark 4.0. The analysis is in the `statcompute` repository, `docs/reports/2026-11-16-databricks-compare-5m.md`.
 
 **F-2. Count the whole job, not only the fit.** The study's cost table excludes preparation and everything after the fit. The repository's own estimates suggest those parts are not small [repo, logistic tutorial chapter 8]:
 

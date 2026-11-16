@@ -1,6 +1,6 @@
 {
  "note": "Read-only reference implementations. This repository never modifies them: adapters call the packages as installed, at the commits below. Change a commit only together with a rerun of the comparisons that cite it.",
- "updated": "2026-11-14",
+ "updated": "2026-11-16",
  "references": {
   "pprof_r": {
    "repository": "https://github.com/UM-KevinHe/pprof",
@@ -20,11 +20,11 @@
   },
   "pprof_spark": {
    "repository": "https://github.com/UM-KevinHe/pprof_spark",
-   "commit": "e5c94840d12a9d249de4730369c899fe669f5e1e",
-   "version": "round 146",
+   "commit": "d0b9bd5c630ecc5794e00889b59693111a4c7047",
+   "version": "round 151",
    "license": "MIT",
-   "inspected": "2026-11-13",
-   "role": "current Spark implementation; built for Spark 4.1 and Databricks Runtime 18"
+   "inspected": "2026-11-16",
+   "role": "current Spark implementation. The pin is the build that ran on the cluster on 2026-11-16; the code of the two models (cox, logistic fixed effects, layout, backend, numerics) is unchanged from e5c9484, the commit read in full"
   }
  }
 }
