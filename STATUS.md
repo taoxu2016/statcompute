@@ -48,5 +48,7 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
 1. Plans `compare_5m` and `unstratified_5m`: the engine's first cluster runs, with and without strata.
-2. The prior-art search for the time-grid form (OI-22).
-3. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+2. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+
+Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
+coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

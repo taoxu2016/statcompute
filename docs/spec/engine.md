@@ -80,11 +80,13 @@ and entry times. The information is the sum over batches minus the matrix from p
 | Memory in a Python worker | One Arrow batch at a time (10,000 rows by default), whatever the partition's size |
 | Centring | At the overall means: there is one stratum |
 
-*What is new and what is not.* The identity is the information of the Poisson form of the Cox
-model. H2O-3's `CoxPH` also aggregates risk-set sums on a time grid, with second moments per time
-(roadmap F-3). A two-pass form with first moments only, Efron ties through three weights per time
-and entry times on the same grid was not found in the sources checked for the roadmap. No
-targeted search has been made yet, so nothing here is claimed as new (OI-22).
+*What is new and what is not* (search of 2026-11-17, `docs/research/prior-art-time-grid.md`). The
+identity is old, and the coxdev package of Taylor, Hastie and Narasimhan publishes it as a
+matrix-free operator with Efron ties, start times, strata and weights: the engine's kernels are an
+independent implementation of that algebra. Aggregating per distinct event time across workers is
+what WebDISCO and H2O-3 do, with second moments. The one part not found in any source is the
+second pass that replaces those second moments by a single weighted Gram matrix, so that
+O(Kp + p^2) numbers travel instead of O(Kp^2). Nothing else is claimed.
 
 ## 3. Logistic regression with provider fixed effects
 
