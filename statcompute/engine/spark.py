@@ -198,6 +198,9 @@ def _measures(effects, level: float):
     for name, z in (("score", score), ("wald", wald)):
         effects[name + "_z"] = z
         effects[name + "_p"], effects[name + "_flag"] = _normal_tests(z, level)
+    exact = effects.pop("exact_p").to_numpy(dtype=float)
+    effects["exact_p"] = exact                       # last, beside its flag
+    effects["exact_flag"] = np.where(exact < 1.0 - level, np.sign(observed - expected), 0).astype(int)
     return effects
 
 
@@ -267,11 +270,49 @@ def _logistic_partition(p: int, beta: List[float]):
     return run
 
 
+def _mid_p(p0: np.ndarray, observed: float) -> float:
+    """Two-sided mid-p value of the observed count under the Poisson-binomial distribution of its
+    rows' null probabilities: twice the smaller tail, each tail counting half of P(S = observed).
+    The recursion adds positive terms only; its cost is quadratic in the provider's rows."""
+    pmf = np.zeros(len(p0) + 1)
+    pmf[0] = 1.0
+    for k, q in enumerate(p0):
+        pmf[1:k + 2] = pmf[1:k + 2] * (1.0 - q) + pmf[:k + 1] * q
+        pmf[0] *= 1.0 - q
+    o = int(round(observed))
+    half = 0.5 * pmf[o]
+    return float(min(1.0, 2.0 * min(pmf[:o + 1].sum() - half, pmf[o:].sum() - half)))
+
+
 def _null_sums(X, y, c, beta, median):
-    """Per provider (rows sorted by provider): expected events and their variance at the median effect."""
+    """Per provider (rows sorted by provider), at the median effect: expected events, their variance,
+    and the exact two-sided mid-p value of the observed count."""
     p0 = kernels._expit(median + X @ beta)
     start = np.flatnonzero(kernels._starts(c))
-    return np.add.reduceat(p0, start), np.add.reduceat(p0 * (1.0 - p0), start)
+    stop = np.concatenate((start[1:], [len(c)]))
+    exact = np.array([_mid_p(p0[a:b], y[a:b].sum()) for a, b in zip(start, stop)])
+    return np.add.reduceat(p0, start), np.add.reduceat(p0 * (1.0 - p0), start), exact
+
+
+def _logistic_direct(p: int, beta: bytes, gamma: bytes, chunk: int = 256):
+    """Direct standardization: for every provider's effect, the events expected over this partition's
+    rows if all of them had that effect. One number per provider; rows times providers evaluations."""
+    def run(batches):
+        import pyarrow as pa
+
+        b, g = np.frombuffer(beta, dtype=np.float64), np.frombuffer(gamma, dtype=np.float64)
+        total, seen = np.zeros(len(g)), False
+        for batch in batches:
+            if batch.num_rows == 0:
+                continue
+            seen = True
+            xb = _batch(batch, p)["x"] @ b
+            with _one_thread():
+                for a in range(0, len(xb), chunk):
+                    total += kernels._expit(xb[a:a + chunk, None] + g[None, :]).sum(axis=0)
+        if seen:
+            yield pa.RecordBatch.from_arrays([pa.array([total.tobytes()], pa.binary())], names=["t"])
+    return run
 
 
 def _case_mix(h, xbar, S, mean):
@@ -298,14 +339,15 @@ def _logistic_effects(p: int, beta: List[float], inverse: bytes, median: float, 
             out = kernels.logistic_partial(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64))
             S = np.frombuffer(inverse, dtype=np.float64).reshape(p, p)
             variance = 1.0 / out["h"] + np.einsum("ij,jk,ik->i", out["xbar"], S, out["xbar"])
-            expected, null = _null_sums(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64), median)
+            expected, null, exact = _null_sums(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64), median)
         yield pa.RecordBatch.from_arrays(
             [pa.array(values[np.flatnonzero(solvable)], type=cols["key_type"]), pa.array(out["gamma"], pa.float64()),
              pa.array(np.sqrt(variance), pa.float64()),
              pa.array(np.sqrt(_case_mix(out["h"], out["xbar"], S, np.frombuffer(mean, dtype=np.float64))), pa.float64()),
              pa.array(out["rows"].astype(np.int64)), pa.array(out["events"], pa.float64()),
-             pa.array(expected, pa.float64()), pa.array(null, pa.float64())],
-            names=["s", "gamma", "standard_error", "standard_error_case_mix", "rows", "events", "expected", "variance_null"])
+             pa.array(expected, pa.float64()), pa.array(null, pa.float64()), pa.array(exact, pa.float64())],
+            names=["s", "gamma", "standard_error", "standard_error_case_mix", "rows", "events", "expected",
+                   "variance_null", "exact_p"])
     return run
 
 
@@ -555,9 +597,9 @@ class LogisticFE:
 
     def __init__(self, outcome: str, features: Sequence[str], provider: str, *, bound: float = 10.0,
                  row_id: Optional[str] = None, tol: float = 1e-8, max_iterations: int = 50,
-                 provider_effects: bool = True, level: float = 0.95, rows_per_partition: int = ROWS_PER_PARTITION,
-                 partitions: Optional[int] = None):
-        self.level = level
+                 provider_effects: bool = True, level: float = 0.95, direct: bool = False,
+                 rows_per_partition: int = ROWS_PER_PARTITION, partitions: Optional[int] = None):
+        self.level, self.direct = level, direct
         self.outcome, self.features, self.provider = outcome, list(features), provider
         self.bound, self.row_id, self.tol, self.max_iterations = bound, row_id, tol, max_iterations
         self.provider_effects = provider_effects
@@ -624,20 +666,28 @@ class LogisticFE:
                 effects = work.mapInArrow(
                     _logistic_effects(p, [float(b) for b in fit["beta"]], inverse, state["median"], mean.tobytes()),
                     f"s {key_type}, gamma double, standard_error double, standard_error_case_mix double, rows long, "
-                    "events double, expected double, variance_null double").toPandas()
+                    "events double, expected double, variance_null double, exact_p double").toPandas()
                 effects["bounded"] = False
                 if held_rows:
                     gamma, part = state["held"]
                     variance = 1.0 / part["h"] + np.einsum("ij,jk,ik->i", part["xbar"], fit["covariance"], part["xbar"])
-                    expected, null = _null_sums(Xd, yd, cd, fit["beta"], state["median"])
+                    expected, null, exact = _null_sums(Xd, yd, cd, fit["beta"], state["median"])
                     effects = pd.concat([effects, pd.DataFrame({
                         "s": held_ids, "gamma": gamma, "standard_error": np.sqrt(variance),
                         "standard_error_case_mix": np.sqrt(_case_mix(part["h"], part["xbar"], fit["covariance"], mean)),
                         "rows": part["rows"].astype(np.int64), "events": part["events"], "expected": expected,
-                        "variance_null": null, "bounded": True})], ignore_index=True)
+                        "variance_null": null, "exact_p": exact, "bounded": True})], ignore_index=True)
                 effects.attrs["median"] = state["median"]
                 effects = _measures(effects, self.level)
                 effects = effects.rename(columns={"s": self.provider}).sort_values(self.provider).reset_index(drop=True)
+                if self.direct:
+                    parts = work.mapInArrow(
+                        _logistic_direct(p, np.asarray(fit["beta"], dtype=np.float64).tobytes(),
+                                         effects["gamma"].to_numpy(dtype=np.float64).tobytes()), "t binary").collect()
+                    total = np.sum([np.frombuffer(r["t"], dtype=np.float64) for r in parts], axis=0)
+                    effects["direct_expected"] = total
+                    effects["direct_ratio"] = total / effects["events"].sum()
+                    effects["direct_rate"] = 100.0 * total / rows
             done = clock.perf_counter()
         finally:
             work.unpersist()

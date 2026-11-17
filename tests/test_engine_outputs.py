@@ -59,3 +59,20 @@ def test_the_linear_predictor_column(spark):
     model = CoxPH("time", "event", NAMES, "s").fit(frame)
     column = model.linear_predictor(frame).select("linear_predictor").toPandas()["linear_predictor"].to_numpy()
     assert gap(np.sort(column), np.sort(X @ model.coefficients)) < 1e-12
+
+
+def test_the_exact_test_and_direct_standardization_match_pprof_py(spark):
+    X, y, provider = logistic_data(n=6000, m=12)
+    y[provider == 3] = 0.0
+    theirs = pprof_py.LogisticFixedEffectModel()
+    theirs.fit(X, y, provider, use_dataprep=False, tol=1e-12)
+    exact = theirs.test(test_method="poibin_exact")
+    direct = theirs.calculate_standardized_measures(stdz="direct")["direct"]
+    frame = spark.createDataFrame(pd.DataFrame(X, columns=NAMES).assign(y=y, provider=provider, id=np.arange(len(y))))
+    ours = LogisticFE("y", NAMES, "provider", row_id="id", tol=1e-11, direct=True, rows_per_partition=2000).fit(frame).provider_effects
+    assert gap(ours["exact_p"], exact["p_value"]) < 1e-12              # absolute: the smallest values are of order 1e-60
+    assert list(ours["exact_flag"]) == [int(f) for f in exact["flag"]]
+    assert gap(ours["direct_expected"], direct["expected"]) < 1e-9
+    assert gap(ours["direct_ratio"], direct["direct_ratio"]) < 1e-12 and gap(ours["direct_rate"], direct["direct_rate"]) < 1e-10
+    plain = LogisticFE("y", NAMES, "provider", row_id="id").fit(frame).provider_effects
+    assert "direct_ratio" not in plain.columns and "exact_p" in plain.columns          # direct only on request

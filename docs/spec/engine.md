@@ -1,4 +1,4 @@
-# The engine: specification, version 0.3
+# The engine: specification, version 0.4
 
 `statcompute.engine` is the new implementation of the two case studies. This document says what
 it estimates, how it computes, what has been verified and what is missing. Evidence is from the
@@ -125,6 +125,8 @@ providers.
 | `indirect_ratio`, `indirect_rate` | events / expected; the ratio times the overall event rate in percent, kept within 0 and 100 |
 | `score_z`, `score_p`, `score_flag` | (events - expected) / sqrt(variance under the median effect); two-sided p-value; 1, -1 or 0 at `level` (default 0.95) |
 | `wald_z`, `wald_p`, `wald_flag` | (gamma - median) / `standard_error_case_mix`, and the same |
+| `exact_p`, `exact_flag` | The exact test, pprof_py's default: the observed count against the Poisson-binomial distribution of the rows' probabilities under the median effect. Two-sided mid-p value: twice the smaller tail, each tail counting half the probability of the observed count. The flag has the sign of events - expected. Cost is quadratic in a provider's rows |
+| `direct_expected`, `direct_ratio`, `direct_rate` | Only with `LogisticFE(..., direct=True)`: events expected over the whole table if every row had this provider's effect; that over all observed events; that over all rows, in percent. One more pass, with rows times providers evaluations |
 
 ## 4. Layout, passes and reproducibility
 
@@ -161,8 +163,9 @@ providers.
 
 | The baseline hazard equals pprof_py's | `test_engine_outputs.py`: both tie methods, with strata and without, with weights | Same rows; hazard within 1e-8 relative (measured: 8e-10 with strata, 5e-14 without) |
 | Standardized ratios and the score and Wald tests equal pprof_py's | Same file, with one provider at the bound | Ratios, rates and expected counts within 1e-9; score statistics within 1e-9; Wald within 1e-7; identical flags |
+| The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-102 tests pass. Nothing of the engine has run on Databricks yet.
+103 tests pass. Nothing of the engine has run on Databricks yet.
 
 One observation about the reference, not the engine: with its default tolerance pprof_py's Efron fit
 can stop 5e-5 standard errors short of the root (seen at 200,000 rows without strata). Comparisons
@@ -178,5 +181,5 @@ with it therefore use its tightest tolerance.
 | A few large strata | The time grid handles one stratum; a grid per stratum is the natural extension |
 | Identical bits across runs, without strata | The sums follow the input's partitions and batches, so runs agree to rounding |
 | Robust variance; martingale and score residuals per row; survival curves for new rows; standardized measures and provider tests | Cox |
-| The exact (Poisson-binomial) provider test; direct standardization; confidence intervals for the ratios; binomial trials | Logistic |
+| Confidence intervals for effects and ratios; funnel limits; binomial trials; a faster exact test for very large providers | Logistic |
 | Sorting once instead of in every pass | A pass factorizes and sorts its partition each time; storing the order at preparation would remove that |
