@@ -1,4 +1,4 @@
-# The engine: specification, version 0.1
+# The engine: specification, version 0.2
 
 `statcompute.engine` is the new implementation of the two case studies. This document says what
 it estimates, how it computes, what has been verified and what is missing. Evidence is from the
@@ -8,7 +8,7 @@ assistant's sandbox (Python 3.12, NumPy, PySpark 4.0.1 in local mode) unless a c
 
 | Model | Entry point | Options |
 |---|---|---|
-| Cox proportional hazards, stratified | `CoxPH(time, event, features, strata)` | `ties` "breslow" or "efron"; `entry` (entry times); `weights`; `offset`; `row_id` |
+| Cox proportional hazards, with strata or without | `CoxPH(time, event, features, strata)`; `strata=None` for a fit without strata | `ties` "breslow" or "efron"; `entry` (entry times); `weights`; `offset`; `row_id`; `max_times` |
 | Logistic regression with one fixed intercept per provider | `LogisticFE(outcome, features, provider)` | `bound` (default 10); `row_id`; `provider_effects` |
 
 Both return coefficients, their covariance (the inverse information), the log-likelihood, the
@@ -42,6 +42,49 @@ amendment F-5 (Efron ties and entry times).
 **Centring within strata** (F-4). The partial likelihood does not change when a covariate is shifted
 by a constant per stratum. The kernel subtracts each stratum's mean first, which removes the
 cancellation the identity otherwise suffers when stratum means are far apart.
+
+### 2.1 With strata: whole strata in a partition
+
+Each partition holds whole strata, the kernel sorts them by time, and one pass returns the
+log-likelihood, the score and the information (section 4).
+
+### 2.2 Without strata: the time grid
+
+Without strata every risk set spans the whole table, so no partition can hold one. The engine then
+uses the fact that times take few distinct values (days over some years: 1,825). It needs at most
+`max_times` distinct values, 20,000 by default, and neither shuffles nor sorts the rows.
+
+*Pass 1.* Every batch of rows adds (r_i, r_i x_i) to a table at the row's exit time; with Efron
+ties the same for the rows that died; with entry times the same at the row's entry time. That is
+p + 1 numbers per time and table. The driver adds the partitions' tables and takes suffix sums over
+the grid:
+
+    (S0, S1)(t) = sum over times >= t of the exit table  -  sum over times >= t of the entry table.
+
+From S0, S1 and the death table it has the log-likelihood, the score, the hazard increment at every
+time and the matrix of rank-one terms. For Efron's steps it does not form a vector per step: with
+a_j = 1/A_j and b_j = (j/k)/A_j, xbar_j = a_j S1 - b_j S1D, so
+
+    sum_j xbar_j xbar_j' = (sum a_j^2) S1 S1' - (sum a_j b_j)(S1 S1D' + S1D S1') + (sum b_j^2) S1D S1D',
+
+three numbers per time.
+
+*Pass 2.* Every batch forms X' diag(E) X, reading E_i off the cumulative hazard at the row's exit
+and entry times. The information is the sum over batches minus the matrix from pass 1.
+
+| Quantity | Value |
+|---|---|
+| Passes per evaluation | 2 |
+| Shuffles, sorts | None; rows stay in the partitions and batches they come in |
+| To the driver per partition, pass 1 | (p + 1) numbers per distinct time, times 1 to 3 tables: 1.5 MB at 100 features and 1,825 days, Breslow, no entry times |
+| Memory in a Python worker | One Arrow batch at a time (10,000 rows by default), whatever the partition's size |
+| Centring | At the overall means: there is one stratum |
+
+*What is new and what is not.* The identity is the information of the Poisson form of the Cox
+model. H2O-3's `CoxPH` also aggregates risk-set sums on a time grid, with second moments per time
+(roadmap F-3). A two-pass form with first moments only, Efron ties through three weights per time
+and entry times on the same grid was not found in the sources checked for the roadmap. No
+targeted search has been made yet, so nothing here is claimed as new (OI-22).
 
 ## 3. Logistic regression with provider fixed effects
 
@@ -86,16 +129,26 @@ providers.
 | Spark equals one machine | `test_engine_spark.py`: every Cox option, both tie methods; logistic with held providers | Within 1e-9 standard errors |
 | Provider standard errors equal pprof_py's | Same file | Within 1e-8, relative |
 | Bad data are refused | Same file | Missing values, events not 0 or 1, entry not before exit |
+| The time grid equals explicit risk sets | `test_engine_time.py`: the same 16 combinations, rows cut into chunks | Log-likelihood within 1e-12, score 1e-11, information 1e-10, relative |
+| The time grid gives the same fit as the stratum kernel run as one stratum | Same file: both tie methods, with and without weights, offset and entry | Coefficients within 1e-10 standard errors (measured: 6e-14) |
+| Unstratified fits equal pprof_py's | Same file: 4 combinations | As for the stratified fits: equal up to the Newton step pprof_py leaves |
+| Unstratified Cox on Spark equals one machine, and does not depend on partitions or batch sizes | Same file | Within 1e-9 standard errors with 7 partitions and batches of 700 rows |
 
-66 tests pass. Nothing of the engine has run on Databricks yet.
+96 tests pass. Nothing of the engine has run on Databricks yet.
+
+One observation about the reference, not the engine: with its default tolerance pprof_py's Efron fit
+can stop 5e-5 standard errors short of the root (seen at 200,000 rows without strata). Comparisons
+with it therefore use its tightest tolerance.
 
 ## 6. Not implemented
 
 | Missing | Note |
 |---|---|
-| Unstratified Cox | Needs the per-time layout (O-3): two passes per evaluation, no shuffle. It is the next algorithm |
 | A provider with events and non-events outside the bound | Refused with a message. Needs a second pass per evaluation |
 | More than 200,000 rows in providers without events or with only events | Refused |
+| Times with more than `max_times` distinct values, without strata | Refused. Continuous times need a sorted layout |
+| A few large strata | The time grid handles one stratum; a grid per stratum is the natural extension |
+| Identical bits across runs, without strata | The sums follow the input's partitions and batches, so runs agree to rounding |
 | Robust variance, baseline hazard, residuals, prediction | Cox |
 | Provider tests, standardized measures, binomial trials | Logistic |
 | Sorting once instead of in every pass | A pass factorizes and sorts its partition each time; storing the order at preparation would remove that |

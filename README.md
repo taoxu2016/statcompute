@@ -5,7 +5,7 @@ independent workspace of the project: new algorithms are tried here, the existin
 are benchmarked here on equal terms, and the next Spark implementation of provider profiling will
 be built here.
 
-**Status, version 0.5.0 (2026-11-16).** The engine's first version exists: `CoxPH` and `LogisticFE`,
+**Status, version 0.6.0 (2026-11-17).** The engine exists: `CoxPH`, with strata or without, and `LogisticFE`,
 verified against explicit risk sets and against pprof_py in a local Spark 4.0 session, and not yet
 run on a cluster. Around it: the benchmark framework, adapters for the three reference packages,
 and the analysis of the first cluster run in `docs/reports/2026-11-16-databricks-compare-5m.md`.
@@ -42,6 +42,8 @@ from statcompute.engine import CoxPH, LogisticFE
 cox = CoxPH("time", "event", features, strata="provider", ties="breslow").fit(frame)
 cox.summary()                      # feature, estimate, standard_error, z, p_value
 
+plain = CoxPH("time", "event", features, strata=None).fit(frame)   # no strata: the time grid, no shuffle
+
 logit = LogisticFE("y", features, "provider").fit(frame)
 logit.provider_effects             # provider, gamma, standard_error, rows, events, bounded
 ```
@@ -50,7 +52,7 @@ logit.provider_effects             # provider, gamma, standard_error, rows, even
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 66 tests, about three minutes
+pytest -q                                     # 96 tests, about three minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```

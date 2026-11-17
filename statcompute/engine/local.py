@@ -7,15 +7,20 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from . import kernels
+from . import kernels, timegrid
 from .newton import maximize
 
 
 def cox_fit(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: Optional[np.ndarray] = None, *,
             ties: str = "breslow", weights: Optional[np.ndarray] = None, offset: Optional[np.ndarray] = None,
             entry: Optional[np.ndarray] = None, tol: float = 1e-8, max_iterations: int = 50,
-            block_rows: int = 50_000) -> Dict[str, object]:
+            block_rows: int = 50_000, layout: str = "auto") -> Dict[str, object]:
+    """With strata, the kernel over blocks of whole strata. Without, the time grid (two passes, rows
+    in any order); `layout="stratum"` forces the first form on unstratified data, as one stratum."""
     n, p = X.shape
+    if strata is None and layout != "stratum":
+        return _cox_fit_time(X, np.asarray(time, dtype=float), np.asarray(event, dtype=float), ties, weights, offset,
+                             entry, tol, max_iterations, block_rows)
     codes = np.zeros(n, dtype=np.int64) if strata is None else np.unique(strata, return_inverse=True)[1]
     order = np.argsort(codes, kind="stable")
     take = lambda v: None if v is None else np.asarray(v)[order]  # noqa: E731
@@ -39,6 +44,24 @@ def cox_fit(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: Optional
 
     fit = maximize(evaluate, p, tol, max_iterations)
     return dict(fit, rows=n, **totals)
+
+
+def _cox_fit_time(X, time, event, ties, weights, offset, entry, tol, max_iterations, chunk_rows):
+    n, p = X.shape
+    inside = None if entry is None else np.isfinite(entry)
+    entry = entry if inside is not None and inside.any() else None
+    grid = np.unique(time if entry is None else np.concatenate((time, entry[inside])))
+    mu = X.mean(axis=0)
+    state = {"shift": 0.0}
+
+    def evaluate(beta):
+        out = timegrid.evaluate_arrays(X, time, event, beta, ties=ties, weights=weights, offset=offset, entry=entry,
+                                       grid=grid, mu=mu, shift=state["shift"], chunk_rows=chunk_rows)
+        state.update(shift=out["eta_max"], events=out["events"], deaths=out["deaths"])
+        return out["loglik"], out["score"], out["information"]
+
+    fit = maximize(evaluate, p, tol, max_iterations)
+    return dict(fit, rows=n, events=state["events"], deaths=state["deaths"], distinct_times=len(grid))
 
 
 def logistic_fit(X: np.ndarray, y: np.ndarray, provider: np.ndarray, *, bound: float = 10.0, tol: float = 1e-8,

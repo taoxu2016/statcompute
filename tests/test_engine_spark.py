@@ -94,8 +94,8 @@ def test_data_that_cannot_be_fitted_are_refused_with_the_reason(survival):
             "provider", "time", *FEATURES, "CASE WHEN id = 5 THEN 2 ELSE event END AS event"))
     with pytest.raises(ValueError, match="entry not before exit"):
         CoxPH("time", "event", FEATURES, "provider", entry="late").fit(frame.selectExpr("*", "time AS late"))
-    with pytest.raises(NotImplementedError, match="per-time layout"):
-        CoxPH("time", "event", FEATURES, None)
+    with pytest.raises(NotImplementedError, match="distinct values"):
+        CoxPH("time", "event", FEATURES, None, max_times=5).fit(frame)
 
 
 def test_the_engine_runs_in_the_harness(spark, tmp_path):

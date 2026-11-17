@@ -40,6 +40,13 @@ implementations agree for the model that was run.
 | Binding limit | Driver memory | Driver memory: X, a stacked copy and q*X | CPU per pass; provider effects on the driver | As for Cox |
 | Run in this repository | Yes | Yes | Yes, on Databricks on 2026-11-16 | Yes |
 
+## The engine
+
+`statcompute.engine` is not a reference and is not in the tables above. `docs/spec/engine.md` lists
+what it implements: Cox regression with or without strata, Breslow or Efron ties, entry times,
+weights and offsets; logistic regression with provider fixed effects and providers at the bound.
+It has none of the outputs beyond the fit yet.
+
 ## Consequences for the benchmarks
 
 - The common ground of all implementations is **Cox with Breslow ties, right-censored rows,

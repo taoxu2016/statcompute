@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .. import __version__
-from ..adapters import EXACT, UNSUPPORTED, Adapter, FitResult, Support, register
+from ..adapters import EXACT, Adapter, FitResult, Support, register
 from ..testkit.specs import COX
 
 
@@ -15,9 +15,10 @@ class Engine(Adapter):
                              "NumPy kernels per partition, one pass per evaluation"}
 
     def support(self, model, data) -> Support:
+        notes = ["stops when the next Newton step is below the tolerance in standard errors (T_CONV)"]
         if model.family == COX and model.strata is None:
-            return Support(UNSUPPORTED, ["an unstratified fit needs the per-time layout, which is not implemented yet"])
-        return Support(EXACT, ["stops when the next Newton step is below the tolerance in standard errors (T_CONV)"])
+            notes.append("without strata: the time grid, two passes per evaluation and no shuffle")
+        return Support(EXACT, notes)
 
     def fit(self, spark, dataset, model) -> FitResult:
         from . import CoxPH, LogisticFE
@@ -29,8 +30,9 @@ class Engine(Adapter):
         if self.options.get("engine_rows_per_partition"):
             options["rows_per_partition"] = int(self.options["engine_rows_per_partition"])
         if model.family == COX:
-            fitted = CoxPH("time", "event", names, "provider", ties=model.ties, **options).fit(frame)
-            extras = {}
+            fitted = CoxPH("time", "event", names, "provider" if model.strata else None, ties=model.ties,
+                           **options).fit(frame)
+            extras = {"layout": fitted.settings["layout"], "distinct_times": fitted.settings.get("distinct_times")}
         else:
             fitted = LogisticFE("y", names, "provider", **options).fit(frame)
             extras = {"providers": fitted.providers, "bounded_low": fitted.bounded_low,

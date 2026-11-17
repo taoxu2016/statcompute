@@ -1,0 +1,14 @@
+{
+ "name": "unstratified_5m",
+ "description": "Cox regression without strata on the two existing 5-million-row datasets (50 and 100 features). The engine uses its time grid; pprof_py fits on the driver; pprof_spark runs such a fit as one task and is cancelled after 20 minutes.",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": null, "convergence": "default"}]
+ },
+ "adapters": ["engine", "pprof_spark", "pprof_py"],
+ "repeats": 2,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10}
+}

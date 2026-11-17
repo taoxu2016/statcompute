@@ -8,4 +8,4 @@ Sub-packages, one per area of the repository (docs/architecture.md):
   bench        scale and performance harness
   engine       the new implementation: Cox and logistic fixed-effect regression on Spark
 """
-__version__ = "0.5.0"
+__version__ = "0.6.0"

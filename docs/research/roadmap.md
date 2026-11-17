@@ -1,6 +1,6 @@
 # Computational modernization of classical statistical models: research roadmap
 
-**Version** 0.8, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
+**Version** 0.9, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
 
 > **Versions 0.4 and 0.5 follow the maintainer's instructions of 2026-11-14 on the workspace** (0.5 corrects the list of reference packages). The work moves to a new, independent repository, `statcompute`, where this document now lives. pprof (R), pprof_py and pprof_spark are read-only references: track A is implemented in the new repository's engine, not in pprof_spark. The standard cluster is a 32 GB driver, 10 workers of 16 GB (confirmed 2026-11-14; version 0.6) and Databricks Runtime 17.3 LTS (Apache Spark 4.0.0). Decisions 5 and 7 and F-1's preconditions change accordingly; the review and the opportunities do not. Where this document says "the repository" in sections 2 to 7, it means pprof_spark, the reference that was read.
 
@@ -164,7 +164,9 @@ For scale: with 8,000 equal providers of 2,500 rows and 20% events, 60 evaluatio
 
 **F-3. Scope the word "new" in §4.2.** The closest prior art I found is H2O-3's `CoxPH` [read in source]. Its workers aggregate risk-set sums on a time grid, and the driver takes reverse cumulative sums. Its Breslow path allocates a time × p × p array per stratum, and for start–stop rows it loops over every grid time a row spans. The study's layout differs by dropping the second moments from the grid, through an identity that is the information of the Poisson form of the Cox model (Whitehead 1980†). I found no source that states the two-pass form of a time grid of first moments followed by a weighted Gram matrix, and my search was not exhaustive.
 
-*Action.* Write "new to the sources checked", cite H2O-3 as prior art, and run a targeted search before any claim of novelty in a paper. Candidates to check: Cyclops and its GPU scans (Yang et al. 2024†), the `survival` package's counting-process code, and SAS's fast option for counting-process data.
+*Action.* Write "new to the sources checked", cite H2O-3 as prior art, and run a targeted search before any claim of novelty in a paper.
+
+*Implemented, 2026-11-17 (version 0.9).* The `statcompute` engine fits Cox regression without strata in this layout, with Efron ties and entry times on the same grid: two passes per evaluation, no shuffle, p + 1 numbers per time. Efron's steps need three weights per time, not a vector per step, because every step's mean is a combination of the same two vectors. It agrees with explicit risk sets and with pprof_py [engine tests]. The targeted search has not been run; nothing is claimed as new. Candidates to check: Cyclops and its GPU scans (Yang et al. 2024†), the `survival` package's counting-process code, and SAS's fast option for counting-process data.
 
 **F-4. Centre covariates per stratum in the weighted-Gram form.** The form subtracts two matrices, G = Xᵀ·diag(rᵢcᵢ)·X and M = Σₜ dₜ·x̄(t)x̄(t)ᵀ. Their difference is the within-risk-set variation. Each of them also contains the variation of the stratum means, when covariates are centred at their overall means. The partial likelihood, the score and the information are exactly invariant to a stratum-specific shift of a covariate, so centring per stratum removes that common part at no statistical cost.
 
