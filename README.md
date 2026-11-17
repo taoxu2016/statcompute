@@ -45,14 +45,16 @@ cox.summary()                      # feature, estimate, standard_error, z, p_val
 plain = CoxPH("time", "event", features, strata=None).fit(frame)   # no strata: the time grid, no shuffle
 
 logit = LogisticFE("y", features, "provider").fit(frame)
-logit.provider_effects             # provider, gamma, standard_error, rows, events, bounded
+logit.provider_effects             # per provider: effect, standardized ratio, score and Wald tests
+
+CoxPH("time", "event", features, strata="provider", baseline=True).fit(frame).baseline_hazard
 ```
 
 ## Quick start on one machine
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 96 tests, about three minutes
+pytest -q                                     # 102 tests, about three minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```

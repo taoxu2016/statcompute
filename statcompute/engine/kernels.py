@@ -32,8 +32,12 @@ def _starts(sorted_values: np.ndarray) -> np.ndarray:
 
 def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.ndarray, beta: np.ndarray, *,
                 ties: str = "breslow", weights: Optional[np.ndarray] = None, offset: Optional[np.ndarray] = None,
-                entry: Optional[np.ndarray] = None, order: Optional[np.ndarray] = None) -> Dict[str, object]:
+                entry: Optional[np.ndarray] = None, order: Optional[np.ndarray] = None,
+                baseline: bool = False) -> Dict[str, object]:
     """Sums for the rows given, which must hold whole strata.
+
+    With `baseline` the result also holds, for every event time of every stratum, the increment of
+    the baseline hazard at x = 0 and offset 0 (Breslow's estimate, or Efron's).
 
     time, event    exit time and event indicator (1 = event) of each row
     strata         integer stratum code of each row
@@ -57,11 +61,13 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     start = np.flatnonzero(first)
     sid = np.cumsum(first) - 1
     size = np.diff(np.concatenate((start, [n])))
-    Xc = X - (np.add.reduceat(X, start, axis=0) / size[:, None])[sid]        # centred within the stratum
+    centre = np.add.reduceat(X, start, axis=0) / size[:, None]
+    Xc = X - centre[sid]                                  # centred within the stratum
     eta = Xc @ beta
     if offset is not None:
         eta = eta + offset[perm]
-    eta = eta - np.maximum.reduceat(eta, start)[sid]      # a constant per stratum changes nothing; avoids overflow
+    shift = np.maximum.reduceat(eta, start)
+    eta = eta - shift[sid]                                # a constant per stratum changes nothing; avoids overflow
     r = w * np.exp(eta)                                   # weighted risk score
     RX = r[:, None] * Xc
 
@@ -155,8 +161,13 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     if h_tied is not None:
         E = E - d * r * h_tied[grp]
     information = (Xc * E[:, None]).T @ Xc - M
-    return {"loglik": loglik, "score": score, "information": information,
-            "events": float(weighted_deaths.sum()), "deaths": int(deaths.sum())}
+    out = {"loglik": loglik, "score": score, "information": information,
+           "events": float(weighted_deaths.sum()), "deaths": int(deaths.sum())}
+    if baseline:
+        # the kernel's risk scores are exp(x'b - centre'b - shift); undo both to report the hazard at x = 0
+        back = np.exp(-(centre @ beta + shift))
+        out["baseline"] = {"stratum": gsid[has], "time": t[ends][has], "increment": h[has] * back[gsid[has]]}
+    return out
 
 
 def _expit(z: np.ndarray) -> np.ndarray:

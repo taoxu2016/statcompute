@@ -148,6 +148,59 @@ def _time_pass2(p: int, beta: bytes, mu: bytes, shift: float, grid: bytes, cumul
     return run
 
 
+def _cox_baseline(p: int, beta: List[float], ties: str):
+    """Every event time of every stratum with the increment of the baseline hazard there."""
+    def run(batches):
+        import pandas as pd
+        import pyarrow as pa
+
+        cols = _stack(batches, p)
+        if cols is None:
+            return
+        codes, values = pd.factorize(cols["s"], sort=True)
+        with _one_thread():
+            out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], codes, np.asarray(beta, dtype=np.float64),
+                                      ties=ties, weights=cols.get("w"), offset=cols.get("o"), entry=cols.get("e"),
+                                      order=cols.get("k"), baseline=True)["baseline"]
+        yield pa.RecordBatch.from_arrays(
+            [pa.array(np.asarray(values)[out["stratum"]], type=cols["key_type"]), pa.array(out["time"], pa.float64()),
+             pa.array(out["increment"], pa.float64())], names=["s", "time", "increment"])
+    return run
+
+
+def _hazard_table(table, by: Optional[str]):
+    """Increments to the table pprof_py and R report: cumulative hazard and exp(-hazard), by stratum and time."""
+    keys = ([by] if by else []) + ["time"]
+    table = table.sort_values(keys).reset_index(drop=True)
+    table["hazard"] = table.groupby(by)["increment"].cumsum() if by else table["increment"].cumsum()
+    table["survival"] = np.exp(-table["hazard"])
+    return table[keys + ["hazard", "survival"]]
+
+
+def _normal_tests(z: np.ndarray, level: float):
+    """Two-sided p-values and flags (1 above, -1 below, 0 neither) for standard normal statistics."""
+    from statistics import NormalDist
+
+    critical = NormalDist().inv_cdf(0.5 + level / 2.0)
+    p = np.array([math.erfc(abs(v) / math.sqrt(2.0)) for v in z])
+    return p, np.where(z > critical, 1, np.where(z < -critical, -1, 0))
+
+
+def _measures(effects, level: float):
+    """Indirect standardization and the score and Wald tests of each provider against the median
+    effect, from the per-provider sums. Definitions follow pprof_py (docs/spec/engine.md, section 3)."""
+    observed, expected = effects["events"].to_numpy(dtype=float), effects["expected"].to_numpy(dtype=float)
+    effects["indirect_ratio"] = observed / expected
+    effects["indirect_rate"] = np.clip(effects["indirect_ratio"] * 100.0 * observed.sum() / effects["rows"].sum(), 0.0, 100.0)
+    variance = effects.pop("variance_null").to_numpy(dtype=float)
+    score = np.where(variance >= 1e-14, (observed - expected) / np.sqrt(np.where(variance >= 1e-14, variance, 1.0)), 0.0)
+    wald = (effects["gamma"].to_numpy() - effects.attrs["median"]) / effects["standard_error_case_mix"].to_numpy()
+    for name, z in (("score", score), ("wald", wald)):
+        effects[name + "_z"] = z
+        effects[name + "_p"], effects[name + "_flag"] = _normal_tests(z, level)
+    return effects
+
+
 def _providers(cols):
     """Rows sorted by provider, with each provider's rows and events and whether it can be solved."""
     import pandas as pd
@@ -214,8 +267,23 @@ def _logistic_partition(p: int, beta: List[float]):
     return run
 
 
-def _logistic_effects(p: int, beta: List[float], inverse: bytes):
-    """Each solvable provider's intercept and its standard error, 1/h + xbar' S^-1 xbar."""
+def _null_sums(X, y, c, beta, median):
+    """Per provider (rows sorted by provider): expected events and their variance at the median effect."""
+    p0 = kernels._expit(median + X @ beta)
+    start = np.flatnonzero(kernels._starts(c))
+    return np.add.reduceat(p0, start), np.add.reduceat(p0 * (1.0 - p0), start)
+
+
+def _case_mix(h, xbar, S, mean):
+    """pprof_py's variance for comparing a provider with a reference: 1/h + (xbar_j - xbar)' S^-1 (xbar_j - xbar),
+    xbar being the mean covariate row. Unlike the plain variance it does not depend on the covariates' origin."""
+    centred = xbar - mean
+    return 1.0 / h + np.einsum("ij,jk,ik->i", centred, S, centred)
+
+
+def _logistic_effects(p: int, beta: List[float], inverse: bytes, median: float, mean: bytes):
+    """Each solvable provider's intercept with its two standard errors, and its expected events and
+    their variance under the median effect."""
     def run(batches):
         import pyarrow as pa
 
@@ -230,10 +298,14 @@ def _logistic_effects(p: int, beta: List[float], inverse: bytes):
             out = kernels.logistic_partial(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64))
             S = np.frombuffer(inverse, dtype=np.float64).reshape(p, p)
             variance = 1.0 / out["h"] + np.einsum("ij,jk,ik->i", out["xbar"], S, out["xbar"])
+            expected, null = _null_sums(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64), median)
         yield pa.RecordBatch.from_arrays(
             [pa.array(values[np.flatnonzero(solvable)], type=cols["key_type"]), pa.array(out["gamma"], pa.float64()),
-             pa.array(np.sqrt(variance), pa.float64()), pa.array(out["rows"].astype(np.int64)),
-             pa.array(out["events"], pa.float64())], names=["s", "gamma", "standard_error", "rows", "events"])
+             pa.array(np.sqrt(variance), pa.float64()),
+             pa.array(np.sqrt(_case_mix(out["h"], out["xbar"], S, np.frombuffer(mean, dtype=np.float64))), pa.float64()),
+             pa.array(out["rows"].astype(np.int64)), pa.array(out["events"], pa.float64()),
+             pa.array(expected, pa.float64()), pa.array(null, pa.float64())],
+            names=["s", "gamma", "standard_error", "standard_error_case_mix", "rows", "events", "expected", "variance_null"])
     return run
 
 
@@ -281,6 +353,7 @@ class CoxModel:
     partitions: int
     settings: Dict[str, Any]
     seconds: Dict[str, float] = field(default_factory=dict)
+    baseline_hazard: Any = None       # pandas: [stratum,] time, hazard (cumulative, at x = 0), survival; on request
 
     @property
     def standard_errors(self) -> np.ndarray:
@@ -289,6 +362,16 @@ class CoxModel:
     def summary(self):
         return _table(self.features, self.coefficients, self.standard_errors)
 
+    def linear_predictor(self, frame, name: str = "linear_predictor"):
+        """`frame` with one more column: the features times the coefficients (no provider effect, no offset)."""
+        from pyspark.sql import functions as F
+
+        terms = [F.col(c).cast("double") * float(b) for c, b in zip(self.features, self.coefficients)]
+        total = terms[0]
+        for term in terms[1:]:
+            total = total + term
+        return frame.withColumn(name, total)
+
 
 @dataclass
 class LogisticModel(CoxModel):
@@ -296,7 +379,7 @@ class LogisticModel(CoxModel):
     bounded_low: int = 0
     bounded_high: int = 0
     median_gamma: float = float("nan")
-    provider_effects: Any = None      # pandas: provider, gamma, standard_error, rows, events, bounded
+    provider_effects: Any = None      # pandas, one row per provider: effect, standard errors, standardized ratio, tests
 
 
 class CoxPH:
@@ -319,10 +402,10 @@ class CoxPH:
                  entry: Optional[str] = None, weights: Optional[str] = None, offset: Optional[str] = None,
                  row_id: Optional[str] = None, tol: float = 1e-8, max_iterations: int = 50,
                  rows_per_partition: int = ROWS_PER_PARTITION, partitions: Optional[int] = None,
-                 max_times: int = MAX_TIMES):
+                 max_times: int = MAX_TIMES, baseline: bool = False):
         if ties not in ("breslow", "efron"):
             raise ValueError("ties must be 'breslow' or 'efron'")
-        self.max_times = max_times
+        self.max_times, self.baseline = max_times, baseline
         self.time, self.event, self.features, self.strata = time, event, list(features), strata
         self.ties, self.entry, self.weights, self.offset, self.row_id = ties, entry, weights, offset, row_id
         self.tol, self.max_iterations = tol, max_iterations
@@ -405,17 +488,25 @@ class CoxPH:
                 if sum(r["n"] for r in parts) != rows:
                     raise RuntimeError("a pass did not see every row")
                 G = np.sum([np.frombuffer(r["g"], dtype=np.float64) for r in parts], axis=0).reshape(p, p)
-                state.update(shift=out["eta_max"], events=out["events"])
+                state.update(shift=out["eta_max"], events=out["events"], last=(out["cumulative"], shift))
                 return out["loglik"], out["score"], G - out["M"]
 
             fit = maximize(evaluate, p, self.tol, self.max_iterations)
             done = clock.perf_counter()
         finally:
             work.unpersist()
+        hazard = None
+        if self.baseline:
+            import pandas as pd
+
+            cumulative, shift = state["last"]             # from the last evaluation, which was at the estimate
+            increment = np.diff(np.concatenate(([0.0], cumulative))) * math.exp(-(float(mu @ fit["beta"]) + shift))
+            at = increment > 0
+            hazard = _hazard_table(pd.DataFrame({"time": grid[at], "increment": increment[at]}), None)
         return CoxModel(self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"],
                         fit["evaluations"], fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="time grid", distinct_times=K, passes_per_evaluation=2),
-                        {"prepare": prepared - started, "fit": done - prepared})
+                        {"prepare": prepared - started, "fit": done - prepared}, hazard)
 
     def _fit_strata(self, frame) -> CoxModel:
         spark = frame.sparkSession
@@ -439,13 +530,19 @@ class CoxPH:
 
             fit = maximize(evaluate, p, self.tol, self.max_iterations)
             done = clock.perf_counter()
+            hazard = None
+            if self.baseline:
+                key_type = frame.schema[self.strata].dataType.simpleString()
+                hazard = _hazard_table(work.mapInArrow(
+                    _cox_baseline(p, [float(b) for b in fit["beta"]], self.ties),
+                    f"s {key_type}, time double, increment double").toPandas(), "s").rename(columns={"s": self.strata})
         finally:
             work.unpersist()
         return CoxModel(self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"], fit["evaluations"], fit["converged"],
                         fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="whole strata", rows_per_partition=self.rows_per_partition,
                                        passes_per_evaluation=1),
-                        {"prepare": prepared - started, "fit": done - prepared})
+                        {"prepare": prepared - started, "fit": done - prepared}, hazard)
 
 
 class LogisticFE:
@@ -458,8 +555,9 @@ class LogisticFE:
 
     def __init__(self, outcome: str, features: Sequence[str], provider: str, *, bound: float = 10.0,
                  row_id: Optional[str] = None, tol: float = 1e-8, max_iterations: int = 50,
-                 provider_effects: bool = True, rows_per_partition: int = ROWS_PER_PARTITION,
+                 provider_effects: bool = True, level: float = 0.95, rows_per_partition: int = ROWS_PER_PARTITION,
                  partitions: Optional[int] = None):
+        self.level = level
         self.outcome, self.features, self.provider = outcome, list(features), provider
         self.bound, self.row_id, self.tol, self.max_iterations = bound, row_id, tol, max_iterations
         self.provider_effects = provider_effects
@@ -482,9 +580,10 @@ class LogisticFE:
         partitions = self.partitions or max(1, math.ceil(frame.count() / self.rows_per_partition))
         work = frame.select(*columns).repartition(partitions, "s").persist()
         try:
-            rows, _ = _check(work, {
+            rows, row = _check(work, {
                 "missing value": F.col("s").isNull() | F.col("y").isNull() | F.exists("x", lambda v: v.isNull() | F.isnan(v)),
-                "outcome not 0 or 1": ~F.col("y").isin(0.0, 1.0)})
+                "outcome not 0 or 1": ~F.col("y").isin(0.0, 1.0)}, [F.avg(F.col("x")[i]).alias(f"m{i}") for i in range(p)])
+            mean = np.array([row[f"m{i}"] for i in range(p)], dtype=np.float64)
             scan = work.mapInArrow(_logistic_scan(p), SCAN).collect()
             providers, low, high = (sum(r[k] for r in scan) for k in ("providers", "low", "high"))
             held_rows = sum(r["held"] for r in scan)
@@ -523,16 +622,21 @@ class LogisticFE:
             if self.provider_effects:
                 inverse = np.ascontiguousarray(fit["covariance"]).tobytes()
                 effects = work.mapInArrow(
-                    _logistic_effects(p, [float(b) for b in fit["beta"]], inverse),
-                    f"s {key_type}, gamma double, standard_error double, rows long, events double").toPandas()
+                    _logistic_effects(p, [float(b) for b in fit["beta"]], inverse, state["median"], mean.tobytes()),
+                    f"s {key_type}, gamma double, standard_error double, standard_error_case_mix double, rows long, "
+                    "events double, expected double, variance_null double").toPandas()
                 effects["bounded"] = False
                 if held_rows:
                     gamma, part = state["held"]
                     variance = 1.0 / part["h"] + np.einsum("ij,jk,ik->i", part["xbar"], fit["covariance"], part["xbar"])
+                    expected, null = _null_sums(Xd, yd, cd, fit["beta"], state["median"])
                     effects = pd.concat([effects, pd.DataFrame({
                         "s": held_ids, "gamma": gamma, "standard_error": np.sqrt(variance),
-                        "rows": part["rows"].astype(np.int64), "events": part["events"], "bounded": True})],
-                        ignore_index=True)
+                        "standard_error_case_mix": np.sqrt(_case_mix(part["h"], part["xbar"], fit["covariance"], mean)),
+                        "rows": part["rows"].astype(np.int64), "events": part["events"], "expected": expected,
+                        "variance_null": null, "bounded": True})], ignore_index=True)
+                effects.attrs["median"] = state["median"]
+                effects = _measures(effects, self.level)
                 effects = effects.rename(columns={"s": self.provider}).sort_values(self.provider).reset_index(drop=True)
             done = clock.perf_counter()
         finally:
