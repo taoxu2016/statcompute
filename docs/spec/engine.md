@@ -1,4 +1,4 @@
-# The engine: specification, version 0.4
+# The engine: specification, version 0.5
 
 `statcompute.engine` is the new implementation of the two case studies. This document says what
 it estimates, how it computes, what has been verified and what is missing. Evidence is from the
@@ -97,6 +97,16 @@ This is the table pprof_py and R's `basehaz(centered = FALSE)` report when there
 an offset those two multiply by exp(mean offset) and the engine does not. With strata it takes one
 more pass; without, it comes from the last evaluation.
 
+### 2.4 Robust variance, residuals and standardized ratios (with strata)
+
+Each is on request and takes one or two more passes after the fit. Definitions are pprof_py's.
+
+| Request | Result | Definition |
+|---|---|---|
+| `robust=True` | `robust_covariance`, `robust_standard_errors` | The sandwich I^-1 (sum over rows of u_i u_i') I^-1, each row its own cluster. u_i is the row's score residual: its events times (x_i - xbar at its time), minus its risk score times the integral of (x_i - xbar(t)) against the hazard over its time at risk. Breslow ties only |
+| `residuals=True` (needs `row_id`) | `residuals`: row_id, martingale | The event indicator minus the row's expected events. Brought to the driver as one table |
+| `standardized=True` | `standardized`: per stratum, observed, expected, indirect_ratio, person_time | He and Schaubel's two-stage measure. The national baseline hazard is Breslow's over the whole table at the stratified estimate; a provider's expected events are its rows' risk scores times that hazard over their time at risk; the ratio is observed over expected. Expected events add up to the observed. Breslow ties only; times with at most `max_times` values |
+
 ## 3. Logistic regression with provider fixed effects
 
 **Estimator.** The estimate pprof_py's SerBIN converges to. For a provider with events and
@@ -163,9 +173,10 @@ providers.
 
 | The baseline hazard equals pprof_py's | `test_engine_outputs.py`: both tie methods, with strata and without, with weights | Same rows; hazard within 1e-8 relative (measured: 8e-10 with strata, 5e-14 without) |
 | Standardized ratios and the score and Wald tests equal pprof_py's | Same file, with one provider at the bound | Ratios, rates and expected counts within 1e-9; score statistics within 1e-9; Wald within 1e-7; identical flags |
+| Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-103 tests pass. Nothing of the engine has run on Databricks yet.
+104 tests pass. Nothing of the engine has run on Databricks yet.
 
 One observation about the reference, not the engine: with its default tolerance pprof_py's Efron fit
 can stop 5e-5 standard errors short of the root (seen at 200,000 rows without strata). Comparisons
@@ -180,6 +191,6 @@ with it therefore use its tightest tolerance.
 | Times with more than `max_times` distinct values, without strata | Refused. Continuous times need a sorted layout |
 | A few large strata | The time grid handles one stratum; a grid per stratum is the natural extension |
 | Identical bits across runs, without strata | The sums follow the input's partitions and batches, so runs agree to rounding |
-| Robust variance; martingale and score residuals per row; survival curves for new rows; standardized measures and provider tests | Cox |
+| For fits without strata: robust variance, residuals, standardized measures. For all fits: robust variance with Efron ties or with clusters of several rows; direct standardization; provider tests; survival curves for new rows | Cox |
 | Confidence intervals for effects and ratios; funnel limits; binomial trials; a faster exact test for very large providers | Logistic |
 | Sorting once instead of in every pass | A pass factorizes and sorts its partition each time; storing the order at preparation would remove that |

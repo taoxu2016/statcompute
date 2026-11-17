@@ -17,11 +17,11 @@ Updated 2026-11-17, version 0.7.0 (round 8: the first outputs beyond the fit).
 | Round 2 safeguards: `running` checkpoint, scrubbed records, caveats, task metrics from the status store when the REST API is closed | Done | Three tests in `tests/test_runner.py` |
 | Autoscaling support: `hold_executors` warm-up, executors sampled during each fit, caveats | Done locally | Three tests in `tests/test_runner.py`; untried on a real autoscaling cluster (OI-02) |
 | Databricks notebooks | Run once by the maintainer | 2026-11-16 |
-| Engine: `CoxPH` with strata or without (Breslow and Efron ties, entry times, weights, offsets) and `LogisticFE` (providers at the bound, provider effects with standard errors) | Version 0.3, with the baseline hazard, indirect and direct standardized ratios, and the score, Wald and exact provider tests; not yet run on a cluster | `docs/spec/engine.md`; 67 tests in `tests/test_engine_kernels.py`, `tests/test_engine_spark.py` and `tests/test_engine_time.py` against explicit risk sets and pprof_py |
+| Engine: `CoxPH` with strata or without (Breslow and Efron ties, entry times, weights, offsets) and `LogisticFE` (providers at the bound, provider effects with standard errors) | Version 0.3, with the baseline hazard, robust variance, martingale residuals and standardized ratios for Cox, and standardized ratios with the score, Wald and exact provider tests for the logistic model; not yet run on a cluster | `docs/spec/engine.md`; 67 tests in `tests/test_engine_kernels.py`, `tests/test_engine_spark.py` and `tests/test_engine_time.py` against explicit risk sets and pprof_py |
 
 All of the above ran in one sandbox: Python 3.12, PySpark 4.0.1 in local mode, R 4.3.3, one core;
 pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned commits. 26 tests
-pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, in about three minutes).
+pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 
 ## First cluster run, 2026-11-16
 

@@ -168,6 +168,81 @@ def _cox_baseline(p: int, beta: List[float], ties: str):
     return run
 
 
+def _cox_extra(p: int, beta: List[float], ties: str, what: str):
+    """After the fit, one pass for the robust variance's middle ("meat") or the martingale residuals ("rows")."""
+    def run(batches):
+        import pandas as pd
+        import pyarrow as pa
+
+        cols = _stack(batches, p)
+        if cols is None:
+            return
+        codes = pd.factorize(cols["s"], sort=True)[0]
+        with _one_thread():
+            out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], codes, np.asarray(beta, dtype=np.float64),
+                                      ties=ties, weights=cols.get("w"), offset=cols.get("o"), entry=cols.get("e"),
+                                      order=cols.get("k"), robust=what == "meat", rows=what == "rows")
+        if what == "meat":
+            yield pa.RecordBatch.from_arrays([pa.array([np.ascontiguousarray(out["meat"]).tobytes()], pa.binary())], names=["m"])
+        else:
+            yield pa.RecordBatch.from_arrays([pa.array(cols["k"], pa.float64()),
+                                              pa.array(cols["d"] - out["expected"], pa.float64())], names=["row_id", "martingale"])
+    return run
+
+
+def _national_tables(p: int, beta: bytes, grid: bytes, has_entry: bool):
+    """For the national baseline at fixed coefficients: per distinct time, the risk scores of the rows that exit
+    there, of the rows that enter there, and the weighted events."""
+    def run(batches):
+        import pyarrow as pa
+
+        b, g = np.frombuffer(beta, dtype=np.float64), np.frombuffer(grid, dtype=np.float64)
+        K = len(g)
+        tables, seen = np.zeros((3, K)), False
+        for batch in batches:
+            if batch.num_rows == 0:
+                continue
+            cols, seen = _batch(batch, p), True
+            r = np.exp(cols["x"] @ b + (cols["o"] if "o" in cols else 0.0)) * (cols["w"] if "w" in cols else 1.0)
+            code = np.searchsorted(g, cols["t"])
+            tables[0] += np.bincount(code, weights=r, minlength=K)
+            tables[2] += np.bincount(code, weights=cols["d"] * (cols["w"] if "w" in cols else 1.0), minlength=K)
+            if has_entry:
+                inside = np.isfinite(cols["e"])
+                tables[1] += np.bincount(np.searchsorted(g, cols["e"][inside]), weights=r[inside], minlength=K)
+        if seen:
+            yield pa.RecordBatch.from_arrays([pa.array([tables.tobytes()], pa.binary())], names=["t"])
+    return run
+
+
+def _provider_expected(p: int, beta: bytes, grid: bytes, cumulative: bytes, has_entry: bool):
+    """Per provider (stratum): observed events, events expected at the national baseline, and person-time."""
+    def run(batches):
+        import pandas as pd
+        import pyarrow as pa
+
+        cols = _stack(batches, p)
+        if cols is None:
+            return
+        b, g, c = (np.frombuffer(v, dtype=np.float64) for v in (beta, grid, cumulative))
+        w = cols["w"] if "w" in cols else 1.0
+        r = np.exp(cols["x"] @ b + (cols["o"] if "o" in cols else 0.0)) * w
+        exposure, start_time = c[np.searchsorted(g, cols["t"])], np.zeros(len(r))
+        if has_entry:
+            inside = np.isfinite(cols["e"])
+            exposure = exposure - np.where(inside, c[np.searchsorted(g, np.where(inside, cols["e"], g[0]))], 0.0)
+            start_time = np.where(inside, cols["e"], 0.0)
+        codes, values = pd.factorize(cols["s"], sort=True)
+        m = len(values)
+        yield pa.RecordBatch.from_arrays(
+            [pa.array(np.asarray(values), type=cols["key_type"]),
+             pa.array(np.bincount(codes, weights=cols["d"] * w, minlength=m), pa.float64()),
+             pa.array(np.bincount(codes, weights=r * exposure, minlength=m), pa.float64()),
+             pa.array(np.bincount(codes, weights=cols["t"] - start_time, minlength=m), pa.float64())],
+            names=["s", "observed", "expected", "person_time"])
+    return run
+
+
 def _hazard_table(table, by: Optional[str]):
     """Increments to the table pprof_py and R report: cumulative hazard and exp(-hazard), by stratum and time."""
     keys = ([by] if by else []) + ["time"]
@@ -396,6 +471,13 @@ class CoxModel:
     settings: Dict[str, Any]
     seconds: Dict[str, float] = field(default_factory=dict)
     baseline_hazard: Any = None       # pandas: [stratum,] time, hazard (cumulative, at x = 0), survival; on request
+    robust_covariance: Any = None     # the sandwich variance, each row its own cluster; on request
+    residuals: Any = None             # pandas: row_id, martingale; on request
+    standardized: Any = None          # pandas, per stratum: observed, expected at the national baseline, indirect_ratio
+
+    @property
+    def robust_standard_errors(self):
+        return None if self.robust_covariance is None else np.sqrt(np.diag(self.robust_covariance))
 
     @property
     def standard_errors(self) -> np.ndarray:
@@ -444,10 +526,19 @@ class CoxPH:
                  entry: Optional[str] = None, weights: Optional[str] = None, offset: Optional[str] = None,
                  row_id: Optional[str] = None, tol: float = 1e-8, max_iterations: int = 50,
                  rows_per_partition: int = ROWS_PER_PARTITION, partitions: Optional[int] = None,
-                 max_times: int = MAX_TIMES, baseline: bool = False):
+                 max_times: int = MAX_TIMES, baseline: bool = False, robust: bool = False, residuals: bool = False,
+                 standardized: bool = False):
         if ties not in ("breslow", "efron"):
             raise ValueError("ties must be 'breslow' or 'efron'")
+        if (robust or residuals or standardized) and not strata:
+            raise NotImplementedError("without strata the robust variance, residuals and standardized measures are "
+                                      "not implemented yet (OPEN_ITEMS.md, OI-20)")
+        if (robust or standardized) and ties != "breslow":
+            raise NotImplementedError("the robust variance and the standardized measures are implemented for Breslow ties only")
+        if residuals and not row_id:
+            raise ValueError("residuals need row_id, to say which row each belongs to")
         self.max_times, self.baseline = max_times, baseline
+        self.robust, self.want_residuals, self.want_standardized = robust, residuals, standardized
         self.time, self.event, self.features, self.strata = time, event, list(features), strata
         self.ties, self.entry, self.weights, self.offset, self.row_id = ties, entry, weights, offset, row_id
         self.tol, self.max_iterations = tol, max_iterations
@@ -578,13 +669,49 @@ class CoxPH:
                 hazard = _hazard_table(work.mapInArrow(
                     _cox_baseline(p, [float(b) for b in fit["beta"]], self.ties),
                     f"s {key_type}, time double, increment double").toPandas(), "s").rename(columns={"s": self.strata})
+            extra, vector = {}, [float(b) for b in fit["beta"]]
+            if self.robust:
+                parts = work.mapInArrow(_cox_extra(p, vector, self.ties, "meat"), "m binary").collect()
+                meat = np.sum([np.frombuffer(r["m"], dtype=np.float64) for r in parts], axis=0).reshape(p, p)
+                extra["robust_covariance"] = fit["covariance"] @ meat @ fit["covariance"]
+            if self.want_residuals:
+                extra["residuals"] = work.mapInArrow(_cox_extra(p, vector, self.ties, "rows"),
+                                                    "row_id double, martingale double").toPandas().sort_values("row_id").reset_index(drop=True)
+            if self.want_standardized:
+                extra["standardized"] = self._standardized(work, frame, p, np.asarray(fit["beta"], dtype=np.float64))
         finally:
             work.unpersist()
         return CoxModel(self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"], fit["evaluations"], fit["converged"],
                         fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="whole strata", rows_per_partition=self.rows_per_partition,
                                        passes_per_evaluation=1),
-                        {"prepare": prepared - started, "fit": done - prepared}, hazard)
+                        {"prepare": prepared - started, "fit": done - prepared}, hazard, **extra)
+
+    def _standardized(self, work, frame, p: int, beta: np.ndarray):
+        """He and Schaubel's two-stage measure, as pprof_py computes it for a provider-stratified fit: the national
+        baseline hazard is Breslow's over the whole table at the stratified estimate, and a provider's expected
+        events are its rows' risk scores times that hazard over their time at risk."""
+        from pyspark.sql import functions as F
+
+        has_entry = bool(self.entry)
+        times = work.select(F.col("t").alias("v"))
+        if has_entry:
+            times = times.union(work.where(F.col("e").isNotNull()).select(F.col("e").alias("v")))
+        values = [r["v"] for r in times.distinct().limit(self.max_times + 1).collect()]
+        if len(values) > self.max_times:
+            raise NotImplementedError(f"the times take more than {self.max_times} distinct values")
+        grid = np.sort(np.asarray(values, dtype=np.float64))
+        parts = work.mapInArrow(_national_tables(p, beta.tobytes(), grid.tobytes(), has_entry), "t binary").collect()
+        exits, entries, events = np.sum([np.frombuffer(r["t"], dtype=np.float64) for r in parts], axis=0).reshape(3, len(grid))
+        at_risk = timegrid._suffix(exits) - timegrid._suffix(entries)
+        hazard = np.where(events > 0, events / np.where(at_risk > 0, at_risk, 1.0), 0.0)
+        key_type = frame.schema[self.strata].dataType.simpleString()
+        table = work.mapInArrow(
+            _provider_expected(p, beta.tobytes(), grid.tobytes(), np.cumsum(hazard).tobytes(), has_entry),
+            f"s {key_type}, observed double, expected double, person_time double").toPandas()
+        table = table.sort_values("s").reset_index(drop=True).rename(columns={"s": self.strata})
+        table.insert(3, "indirect_ratio", table["observed"] / table["expected"])
+        return table
 
 
 class LogisticFE:

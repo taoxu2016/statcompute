@@ -76,3 +76,26 @@ def test_the_exact_test_and_direct_standardization_match_pprof_py(spark):
     assert gap(ours["direct_ratio"], direct["direct_ratio"]) < 1e-12 and gap(ours["direct_rate"], direct["direct_rate"]) < 1e-10
     plain = LogisticFE("y", NAMES, "provider", row_id="id").fit(frame).provider_effects
     assert "direct_ratio" not in plain.columns and "exact_p" in plain.columns          # direct only on request
+
+
+def test_cox_robust_variance_residuals_and_standardized_ratios_match_pprof_py(spark):
+    X, time, event, strata, _, _, _, _ = survival_data(n=3000, strata=6, seed=21)
+    frame = spark.createDataFrame(pd.DataFrame(X, columns=NAMES).assign(time=time, event=event, s=strata, id=np.arange(len(time))))
+    ours = CoxPH("time", "event", NAMES, "s", row_id="id", tol=1e-11, robust=True, residuals=True, standardized=True,
+                 rows_per_partition=1000).fit(frame)
+    theirs = pprof_py.CoxPH(ties="breslow", eps=1e-13, max_iter=50, robust=True)
+    theirs.fit(X, duration=time, event=event, strata=strata)
+    assert np.max(np.abs(ours.robust_covariance / theirs.robust_covariance_ - 1)) < 1e-6
+    assert np.max(np.abs(ours.robust_standard_errors / theirs.standard_errors_ - 1)) < 1e-6
+    assert list(ours.residuals["row_id"]) == list(range(len(time)))
+    assert gap(ours.residuals["martingale"], theirs.martingale_residuals_) < 1e-7
+    measures = theirs.calculate_standardized_measures(X, duration=time, event=event, provider_id=strata, stdz="indirect")["indirect"]
+    table = ours.standardized
+    assert list(table.columns) == ["s", "observed", "expected", "indirect_ratio", "person_time"]
+    assert gap(table["observed"], measures["observed"]) == 0 and gap(table["person_time"], measures["person_time"]) < 1e-9
+    assert gap(table["expected"], measures["expected"]) < 1e-6 and gap(table["indirect_ratio"], measures["indirect_ratio"]) < 1e-7
+    assert abs(table["expected"].sum() - table["observed"].sum()) < 1e-8 * table["observed"].sum()   # expected events add up to the observed
+    with pytest.raises(NotImplementedError):
+        CoxPH("time", "event", NAMES, "s", ties="efron", robust=True)
+    with pytest.raises(ValueError, match="row_id"):
+        CoxPH("time", "event", NAMES, "s", residuals=True)

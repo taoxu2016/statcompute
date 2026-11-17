@@ -33,11 +33,14 @@ def _starts(sorted_values: np.ndarray) -> np.ndarray:
 def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.ndarray, beta: np.ndarray, *,
                 ties: str = "breslow", weights: Optional[np.ndarray] = None, offset: Optional[np.ndarray] = None,
                 entry: Optional[np.ndarray] = None, order: Optional[np.ndarray] = None,
-                baseline: bool = False) -> Dict[str, object]:
+                baseline: bool = False, robust: bool = False, rows: bool = False) -> Dict[str, object]:
     """Sums for the rows given, which must hold whole strata.
 
     With `baseline` the result also holds, for every event time of every stratum, the increment of
-    the baseline hazard at x = 0 and offset 0 (Breslow's estimate, or Efron's).
+    the baseline hazard at x = 0 and offset 0 (Breslow's estimate, or Efron's). With `rows` it holds
+    each row's expected events, in the order the rows were given (the martingale residual is the
+    event minus this). With `robust` it holds the sum over rows of the outer products of their score
+    residuals, the middle of the sandwich variance (Breslow ties only).
 
     time, event    exit time and event indicator (1 = event) of each row
     strata         integer stratum code of each row
@@ -163,6 +166,22 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     information = (Xc * E[:, None]).T @ Xc - M
     out = {"loglik": loglik, "score": score, "information": information,
            "events": float(weighted_deaths.sum()), "deaths": int(deaths.sum())}
+    if rows:
+        expected = np.empty(n)
+        expected[perm] = E
+        out["expected"] = expected
+    if robust:
+        if h_tied is not None:
+            raise NotImplementedError("the robust variance is implemented for Breslow ties only")
+        xbar_all = np.zeros((G, p))
+        xbar_all[has] = xbar
+        sx = np.vstack((np.cumsum((h[:, None] * xbar_all)[::-1], axis=0)[::-1], np.zeros((1, p))))
+        beyond_x = sx[gnext]
+        integral = (sx[:-1] - beyond_x[gsid])[grp]          # sum over event times up to the row's exit of h * xbar
+        if truncated:
+            integral = integral - (sx[pos] - beyond_x[sid])
+        U = dw[:, None] * (Xc - xbar_all[grp]) - r[:, None] * (Xc * exposure[:, None] - integral)
+        out["meat"] = U.T @ U
     if baseline:
         # the kernel's risk scores are exp(x'b - centre'b - shift); undo both to report the hazard at x = 0
         back = np.exp(-(centre @ beta + shift))
