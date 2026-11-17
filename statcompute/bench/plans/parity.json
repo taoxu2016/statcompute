@@ -48,6 +48,7 @@
   ]
  },
  "adapters": [
+  "engine",
   "pprof_spark",
   "pprof_spark_cached",
   "lab_spark",

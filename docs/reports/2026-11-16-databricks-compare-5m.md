@@ -153,3 +153,19 @@ executors were arriving; the other two had 10 throughout. The records would say 
 1. The JSON records of this run into `results/2026-11-16-databricks/runs/`.
 2. Plan `width` (50, 100 and 180 features) with round 4 and `hold_executors` = 10.
 3. The single-machine packages on the 128 GB driver for the same plan.
+
+## 8. Addendum: what the JSON records added (2026-11-16)
+
+The maintainer supplied the records of several runs. Three facts from them:
+
+- **Scale-up is slow and scale-down is fast.** Before the first pprof_spark Cox fit the warm-up ran
+  its full 906 s and the cluster stayed at 4 executors. Before the second it needed 701 s more to
+  reach 10. During single-machine fits the cluster lost executors 30 and 70 s after they fell idle.
+- **pprof_spark's heaviest stage had 17 tasks.** In its Cox fit at 50 features on 4 executors, one
+  stage of 17 tasks ran 17 to 21 s per task, a third of all executor time; the 200-task stages of
+  the passes took half a second per task. The 17 are the files the dataset was written in. The
+  time went into reading the input, with a parallelism the input's layout sets.
+- **The task metrics came from the Spark UI's REST API**, which is reachable on this cluster.
+
+The maintainer cannot fix the cluster's size, so all further work is within autoscaling, with full
+size requested before each Spark fit.

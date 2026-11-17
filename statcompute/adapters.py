@@ -92,3 +92,4 @@ def _load() -> None:
     """Import the modules that register adapters. Importing them never imports the wrapped package."""
     from .references import pprof_py_adapter, pprof_r_adapter, pprof_spark_adapter  # noqa: F401
     from .lab import adapters as _lab_adapters  # noqa: F401
+    from .engine import adapter as _engine_adapter  # noqa: F401

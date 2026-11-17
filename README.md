@@ -5,11 +5,11 @@ independent workspace of the project: new algorithms are tried here, the existin
 are benchmarked here on equal terms, and the next Spark implementation of provider profiling will
 be built here.
 
-**Status, version 0.4.0 (2026-11-16).** The benchmark framework, adapters for the three reference
-packages and two prototypes of the recommended algorithms exist and pass their tests in a local
-Spark 4.0 session. The first cluster run is analysed in
-`docs/reports/2026-11-16-databricks-compare-5m.md`. The new engine is not started. `STATUS.md` has
-the details.
+**Status, version 0.5.0 (2026-11-16).** The engine's first version exists: `CoxPH` and `LogisticFE`,
+verified against explicit risk sets and against pprof_py in a local Spark 4.0 session, and not yet
+run on a cluster. Around it: the benchmark framework, adapters for the three reference packages,
+and the analysis of the first cluster run in `docs/reports/2026-11-16-databricks-compare-5m.md`.
+`STATUS.md` has the details.
 
 ## Three rules
 
@@ -24,7 +24,7 @@ the details.
 
 | Area | Where | What it holds |
 |---|---|---|
-| New Spark implementation | `engine/` | The Scala engine that will replace pprof_spark's kernels and layouts. Not started; `engine/README.md` has the plan |
+| New Spark implementation | `statcompute/engine/` | Cox regression and logistic regression with provider fixed effects on Spark, with NumPy kernels inside partitions. Version 0.1; `docs/spec/engine.md` |
 | Experimental algorithms and prototypes | `statcompute/lab/` | NumPy kernels, a one-machine prototype and a Spark prototype of the recommended algorithms; the probes behind the research roadmap |
 | Reference implementations and adapters | `statcompute/references/` | One adapter per reference package, and the lock file with their commits |
 | Shared test utilities and synthetic data | `statcompute/testkit/` | Dataset and model specifications, the deterministic generator, tolerance classes |
@@ -34,11 +34,23 @@ the details.
 
 `statcompute/adapters.py` defines the one contract everything is run through.
 
+## Using the engine
+
+```python
+from statcompute.engine import CoxPH, LogisticFE
+
+cox = CoxPH("time", "event", features, strata="provider", ties="breslow").fit(frame)
+cox.summary()                      # feature, estimate, standard_error, z, p_value
+
+logit = LogisticFE("y", features, "provider").fit(frame)
+logit.provider_effects             # provider, gamma, standard_error, rows, events, bounded
+```
+
 ## Quick start on one machine
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 29 tests, about two minutes
+pytest -q                                     # 66 tests, about three minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```

@@ -1,0 +1,17 @@
+{
+ "name": "compare_5m",
+ "description": "The maintainer's comparison of 2026-11-16, with the engine added: 5 million rows, 8,000 providers, 50 and 100 features, on the autoscaling cluster with full size requested before each Spark fit.",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": "provider", "convergence": "default"}],
+  "logistic_fe": [{"family": "logistic_fe", "convergence": "default"}]
+ },
+ "adapters": ["engine", "pprof_spark", "pprof_spark_cached", "lab_spark", "pprof_py", "lab_numpy"],
+ "repeats": 2,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10}
+}

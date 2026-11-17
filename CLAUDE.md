@@ -11,8 +11,8 @@
 - A comparison between implementations states whether it is like-for-like. Differences in
   supported functionality go into `docs/capabilities.md`, not into a footnote.
 - Statistical and design decisions are proposed in `DECISIONS.md`; the maintainer takes them.
-- The new engine uses the Scala package `statcompute.engine`, never `pprof.spark`, so that both
-  can be loaded on one cluster.
+- The engine is the Python package `statcompute.engine` (D-08). It imports nothing from `lab`,
+  `references` or `bench`. A change to an estimator comes with a test against pprof_py.
 - End of a round: update `STATUS.md`, `OPEN_ITEMS.md` and `DECISIONS.md`.
 
 Commands: `pytest -q`; `python -m statcompute.bench run --plan smoke --data-root D --results-root R`.

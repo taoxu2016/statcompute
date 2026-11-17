@@ -12,6 +12,8 @@ Proposed by the assistant; taken by the maintainer. Numbers are never reused.
 | D-06 | Numerical comparisons take pprof_py at its tightest tolerance as the reference | Approved 2026-11-14 |
 | D-07 | The repository stores run records and reports of synthetic data only, as JSON and Markdown. Since the repository is public, records are scrubbed when written: the cluster identifier is hashed, and e-mail addresses and user folders are removed from messages and traces | Approved 2026-11-14; the scrubbing was added in round 2 |
 
+| D-08 | The engine is Python on Spark: NumPy kernels inside partitions that hold whole strata or providers (`statcompute.engine`). This settles D-04. Reasons: on the production cluster the prototype of this design gave the same estimates as pprof_py and was faster than pprof_spark for the logistic model; its kernels use memory outside the 2.2 GB JVM heaps that Photon leaves; it needs no JAR build; it can be tested end to end in the assistant's sandbox; and pprof_spark's own project is already pursuing the JVM route. Cost: results are reproducible bit for bit only for a fixed layout and session, and to rounding otherwise | Proposed 2026-11-16; the engine's first version is built on it |
+
 The research roadmap has decisions of its own (its section 9: adopting track A with its amendments,
 the definition of the estimate at the bound, the production design facts, the first second-wave
 project). Those are not covered by the approval above and stay open.

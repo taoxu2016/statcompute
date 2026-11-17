@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-11-16, version 0.4.0 (round 4: after the first cluster run).
+Updated 2026-11-16, version 0.5.0 (round 5: the engine's first version).
 
 ## What exists
 
@@ -17,11 +17,11 @@ Updated 2026-11-16, version 0.4.0 (round 4: after the first cluster run).
 | Round 2 safeguards: `running` checkpoint, scrubbed records, caveats, task metrics from the status store when the REST API is closed | Done | Three tests in `tests/test_runner.py` |
 | Autoscaling support: `hold_executors` warm-up, executors sampled during each fit, caveats | Done locally | Three tests in `tests/test_runner.py`; untried on a real autoscaling cluster (OI-02) |
 | Databricks notebooks | Run once by the maintainer | 2026-11-16 |
-| New engine | Not started | `engine/README.md` |
+| Engine: `CoxPH` (Breslow and Efron ties, entry times, weights, offsets, strata) and `LogisticFE` (providers at the bound, provider effects with standard errors) | Version 0.1; not yet run on a cluster | `docs/spec/engine.md`; 37 tests in `tests/test_engine_kernels.py` and `tests/test_engine_spark.py` against explicit risk sets and pprof_py |
 
 All of the above ran in one sandbox: Python 3.12, PySpark 4.0.1 in local mode, R 4.3.3, one core;
 pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned commits. 26 tests
-pass in about 80 seconds (29 since round 3).
+pass in about 80 seconds (29 since round 3, 66 since round 5, in about 140 seconds).
 
 ## First cluster run, 2026-11-16
 
@@ -37,14 +37,16 @@ from 1 to 10 workers. Analysis in `docs/reports/2026-11-16-databricks-compare-5m
 
 ## What has not happened
 
-- No run at 180 features, and none above 5 million rows.
+- No run of the engine on Databricks.
+- No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
-- No engine code.
 
 ## Next
 
 The repository is at https://github.com/taoxu2016/statcompute and decisions D-01 to D-07 are approved.
 
-1. The JSON records of the first run into `results/2026-11-16-databricks/runs/`.
-2. Plan `width` (50, 100, 180 features) with round 4 and `hold_executors` = 10; the single-machine packages on the 128 GB driver.
-3. Then: the choice in D-04 and the engine's first step.
+The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
+
+1. Plan `compare_5m` once more, now with the engine in it: the engine's first cluster run.
+2. The per-time layout for unstratified Cox (OI-18).
+3. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.

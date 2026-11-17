@@ -1,6 +1,6 @@
 # Computational modernization of classical statistical models: research roadmap
 
-**Version** 0.7, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
+**Version** 0.8, draft for the maintainer's review · **Date** 2026-11-14 (version 0.1: 2026-11-13)
 
 > **Versions 0.4 and 0.5 follow the maintainer's instructions of 2026-11-14 on the workspace** (0.5 corrects the list of reference packages). The work moves to a new, independent repository, `statcompute`, where this document now lives. pprof (R), pprof_py and pprof_spark are read-only references: track A is implemented in the new repository's engine, not in pprof_spark. The standard cluster is a 32 GB driver, 10 workers of 16 GB (confirmed 2026-11-14; version 0.6) and Databricks Runtime 17.3 LTS (Apache Spark 4.0.0). Decisions 5 and 7 and F-1's preconditions change accordingly; the review and the opportunities do not. Where this document says "the repository" in sections 2 to 7, it means pprof_spark, the reference that was read.
 
@@ -207,6 +207,8 @@ The study's choice, to step through the same reduced system, preserves the valid
 - Step control by "halving on a concave function" needs care near convergence, because the root is not a stationary point of the bounded profile likelihood. The second-order difference is far below rounding in the study's test, so I expect no stall, but the specification should say what the acceptance test does there [hypothesis].
 
 *Action.* Record the definition as an explicit statistical choice, and register the 2·10⁻⁵ standard-error distance from the bounded maximum-likelihood estimate, so that the methodology owner can confirm it.
+
+*Implemented, 2026-11-16 (version 0.8).* The `statcompute` engine fits these equations by profile-likelihood Newton, with the providers that have no finite intercept held at the median plus or minus the bound. On data with three such providers it returns pprof_py's coefficients to 4·10⁻¹⁵ standard errors and every intercept, the held ones included, to 4·10⁻¹⁶ [engine tests]. The statistical question is unchanged and still the methodology owner's.
 
 **F-7. A bit-identical interim step exists.** Neumaier's update chooses between two formulas by comparing magnitudes. The branch-free two-sum computes the same rounding error, so the accumulator's state is the same bit for bit: 16 million pairs in four regimes without a mismatch, and identical JVM arrays at p = 20, 50 and 100 [probe A-3, A-4]. It ran 1.2 to 1.3 times faster at p = 50 and 100 [probe A-4]. That is small next to chunking, but it needs no fixture re-comparison, and it applies to the sums that stay compensated: the score, the provider sums and the folds of the chunks.
 
