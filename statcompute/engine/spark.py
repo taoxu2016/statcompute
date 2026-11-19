@@ -1,13 +1,21 @@
 """The engine's two estimators on Spark.
 
 Layout. The rows are shuffled once so that every partition holds whole strata (Cox) or whole
-providers (logistic), with the features packed into one array column, and that table is cached.
+providers (logistic), with the features packed into one array column; Spark sorts each partition
+into the order the kernels work in, and that table is cached. So the order is computed once, when
+the working set is built, and no pass sorts or copies the rows again. Without strata the rows are
+spread over partitions by their row identifier (or by a hash of the row) and sorted by it.
 The number of partitions depends only on the number of rows and `rows_per_partition`, never on the
 size of the cluster, so the same data give the same partitions on 2 executors and on 10.
 
-Passes. Every evaluation of the likelihood is one Spark job: each partition's rows go to a Python
-worker as Arrow batches, a NumPy kernel returns that partition's sums, and the driver adds them in
-partition order. Newton's method runs on the driver. The kernels use memory outside the JVM heap.
+Jobs. One light job reads the columns other than the features: it counts the rows and refuses data
+that cannot be fitted. The working set is then built by the first pass that needs it, in the same
+job; that pass also looks for missing feature values. Nothing else scans the input.
+
+Passes. Every evaluation of the likelihood is one Spark job (two without strata): each partition's
+rows go to a Python worker as Arrow batches, a NumPy kernel returns that partition's sums, and the
+driver adds them in partition order. Newton's method runs on the driver. The kernels use memory
+outside the JVM heap.
 """
 from __future__ import annotations
 
@@ -27,8 +35,10 @@ from .newton import maximize
 ROWS_PER_PARTITION = 50_000
 MAX_HELD_ROWS = 200_000
 MAX_TIMES = 20_000
-PARTIAL = "ll double, u binary, i binary, n long, e double, g binary"
-SCAN = "n long, providers long, low long, high long, held long, e double"
+DRIVER_TABLES = 768 * 2 ** 20       # pass-1 tables of the time grid beyond this many bytes are added on the executors first
+PARTIAL = "ll double, u binary, i binary, n long, e double, g binary, bad long"
+SCAN = "n long, providers long, low long, high long, held long, e double, bad long, m binary"
+TABLES = "t binary, m binary, bad long"
 
 
 # ---------------------------------------------------------------- inside the Python workers
@@ -61,28 +71,49 @@ def _stack(batches, p: int) -> Optional[Dict[str, Any]]:
     return out
 
 
-def _partial(pa, loglik, vector, matrix, rows, events, gamma=b""):
+def _missing(X: np.ndarray) -> int:
+    """How many rows have a missing feature (null or NaN). A NaN anywhere makes the sum NaN, so
+    clean data cost one pass and no temporary."""
+    if not np.isnan(X.sum()):
+        return 0
+    return int(np.isnan(X).any(axis=1).sum())
+
+
+def _runs(keys: np.ndarray):
+    """For keys that arrive sorted (equal keys together): the code 0, 1, ... of each row and the
+    distinct keys. What a factorization would give, without hashing or sorting."""
+    first = kernels._starts(keys)
+    return np.cumsum(first) - 1, np.asarray(keys)[first]
+
+
+def _partial(pa, loglik, vector, matrix, rows, events, gamma=b"", bad=0):
     return pa.RecordBatch.from_arrays(
         [pa.array([float(loglik)], pa.float64()), pa.array([vector.tobytes()], pa.binary()),
          pa.array([np.ascontiguousarray(matrix).tobytes()], pa.binary()), pa.array([int(rows)], pa.int64()),
-         pa.array([float(events)], pa.float64()), pa.array([gamma], pa.binary())],
-        names=["ll", "u", "i", "n", "e", "g"])
+         pa.array([float(events)], pa.float64()), pa.array([gamma], pa.binary()), pa.array([int(bad)], pa.int64())],
+        names=["ll", "u", "i", "n", "e", "g", "bad"])
 
 
-def _cox_partition(p: int, beta: List[float], ties: str):
+def _cox_partition(p: int, beta: List[float], ties: str, validate: bool = False):
+    """One evaluation over a partition, whose rows arrive sorted by stratum, time descending and
+    row identifier. With `validate` (the pass that builds the working set) rows with a missing
+    feature are counted first, and a partition that has any returns only that count."""
     def run(batches):
-        import pandas as pd
         import pyarrow as pa
 
         cols = _stack(batches, p)
         if cols is None:
             return
-        codes = pd.factorize(cols["s"], sort=True)[0]
+        rows = len(cols["t"])
+        bad = _missing(cols["x"]) if validate else 0
+        if bad:
+            yield _partial(pa, 0.0, np.zeros(p), np.zeros((p, p)), rows, 0.0, bad=bad)
+            return
         with _one_thread():
-            out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], codes, np.asarray(beta, dtype=np.float64),
+            out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], _runs(cols["s"])[0], np.asarray(beta, dtype=np.float64),
                                       ties=ties, weights=cols.get("w"), offset=cols.get("o"), entry=cols.get("e"),
-                                      order=cols.get("k"))
-        yield _partial(pa, out["loglik"], out["score"], out["information"], len(codes), out["events"])
+                                      presorted=True)
+        yield _partial(pa, out["loglik"], out["score"], out["information"], rows, out["events"])
     return run
 
 
@@ -93,23 +124,39 @@ def _batch(batch, p: int) -> Dict[str, Any]:
     return out
 
 
-def _time_pass1(p: int, beta: bytes, mu: bytes, shift: float, grid: bytes, efron: bool, has_entry: bool):
-    """Pass 1 of the time grid: the partition's batches, one after another, into one set of tables."""
+def _tables(pa, tables: np.ndarray, sums: Optional[np.ndarray], bad: int):
+    return pa.RecordBatch.from_arrays(
+        [pa.array([tables.tobytes()], pa.binary()), pa.array([b"" if sums is None else sums.tobytes()], pa.binary()),
+         pa.array([int(bad)], pa.int64())], names=["t", "m", "bad"])
+
+
+def _time_pass1(p: int, beta: bytes, mu: bytes, shift: float, grid: bytes, efron: bool, has_entry: bool,
+                first: bool = False):
+    """Pass 1 of the time grid: the partition's batches, one after another, into one set of tables.
+    With `first` (the pass that builds the working set, at beta = 0 and without centring) it also
+    returns the sum of every feature, from which the driver takes the means, and counts the rows
+    with a missing feature; such a batch adds nothing to the tables."""
     def run(batches):
         import pyarrow as pa
 
         b, m, g = (np.frombuffer(v, dtype=np.float64) for v in (beta, mu, grid))
         tables = timegrid.new_tables(len(g), p, efron, has_entry)
-        seen = False
+        sums, bad, seen = (np.zeros(p) if first else None), 0, False
         for batch in batches:
             if batch.num_rows == 0:
                 continue
             cols, seen = _batch(batch, p), True
+            if first:
+                missing = _missing(cols["x"])
+                if missing:
+                    bad += missing
+                    continue
+                sums += cols["x"].sum(axis=0)
             with _one_thread():
                 timegrid.accumulate(tables, g, cols["x"], cols["t"], cols["d"], b, m, shift, efron=efron,
                                     weights=cols.get("w"), offset=cols.get("o"), entry=cols.get("e") if has_entry else None)
         if seen:
-            yield pa.RecordBatch.from_arrays([pa.array([tables.tobytes()], pa.binary())], names=["t"])
+            yield _tables(pa, tables, sums, bad)
     return run
 
 
@@ -118,12 +165,16 @@ def _time_sum():
     def run(batches):
         import pyarrow as pa
 
-        total = None
+        total, sums, bad = None, None, 0
         for batch in batches:
-            for value in batch.column("t").to_pylist():
+            for value, extra, count in zip(batch.column("t").to_pylist(), batch.column("m").to_pylist(),
+                                           batch.column("bad").to_pylist()):
                 total = timegrid.add(total, np.frombuffer(value, dtype=np.float64))
+                bad += count
+                if extra:
+                    sums = np.frombuffer(extra, dtype=np.float64) + (0.0 if sums is None else sums)
         if total is not None:
-            yield pa.RecordBatch.from_arrays([pa.array([total.tobytes()], pa.binary())], names=["t"])
+            yield _tables(pa, total, sums, bad)
     return run
 
 
@@ -151,17 +202,16 @@ def _time_pass2(p: int, beta: bytes, mu: bytes, shift: float, grid: bytes, cumul
 def _cox_baseline(p: int, beta: List[float], ties: str):
     """Every event time of every stratum with the increment of the baseline hazard there."""
     def run(batches):
-        import pandas as pd
         import pyarrow as pa
 
         cols = _stack(batches, p)
         if cols is None:
             return
-        codes, values = pd.factorize(cols["s"], sort=True)
+        codes, values = _runs(cols["s"])
         with _one_thread():
             out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], codes, np.asarray(beta, dtype=np.float64),
                                       ties=ties, weights=cols.get("w"), offset=cols.get("o"), entry=cols.get("e"),
-                                      order=cols.get("k"), baseline=True)["baseline"]
+                                      baseline=True, presorted=True)["baseline"]
         yield pa.RecordBatch.from_arrays(
             [pa.array(np.asarray(values)[out["stratum"]], type=cols["key_type"]), pa.array(out["time"], pa.float64()),
              pa.array(out["increment"], pa.float64())], names=["s", "time", "increment"])
@@ -171,17 +221,15 @@ def _cox_baseline(p: int, beta: List[float], ties: str):
 def _cox_extra(p: int, beta: List[float], ties: str, what: str):
     """After the fit, one pass for the robust variance's middle ("meat") or the martingale residuals ("rows")."""
     def run(batches):
-        import pandas as pd
         import pyarrow as pa
 
         cols = _stack(batches, p)
         if cols is None:
             return
-        codes = pd.factorize(cols["s"], sort=True)[0]
         with _one_thread():
-            out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], codes, np.asarray(beta, dtype=np.float64),
+            out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], _runs(cols["s"])[0], np.asarray(beta, dtype=np.float64),
                                       ties=ties, weights=cols.get("w"), offset=cols.get("o"), entry=cols.get("e"),
-                                      order=cols.get("k"), robust=what == "meat", rows=what == "rows")
+                                      robust=what == "meat", rows=what == "rows", presorted=True)
         if what == "meat":
             yield pa.RecordBatch.from_arrays([pa.array([np.ascontiguousarray(out["meat"]).tobytes()], pa.binary())], names=["m"])
         else:
@@ -218,7 +266,6 @@ def _national_tables(p: int, beta: bytes, grid: bytes, has_entry: bool):
 def _provider_expected(p: int, beta: bytes, grid: bytes, cumulative: bytes, has_entry: bool):
     """Per provider (stratum): observed events, events expected at the national baseline, and person-time."""
     def run(batches):
-        import pandas as pd
         import pyarrow as pa
 
         cols = _stack(batches, p)
@@ -232,7 +279,7 @@ def _provider_expected(p: int, beta: bytes, grid: bytes, cumulative: bytes, has_
             inside = np.isfinite(cols["e"])
             exposure = exposure - np.where(inside, c[np.searchsorted(g, np.where(inside, cols["e"], g[0]))], 0.0)
             start_time = np.where(inside, cols["e"], 0.0)
-        codes, values = pd.factorize(cols["s"], sort=True)
+        codes, values = _runs(cols["s"])
         m = len(values)
         yield pa.RecordBatch.from_arrays(
             [pa.array(np.asarray(values), type=cols["key_type"]),
@@ -280,14 +327,17 @@ def _measures(effects, level: float):
 
 
 def _providers(cols):
-    """Rows sorted by provider, with each provider's rows and events and whether it can be solved."""
-    import pandas as pd
-
-    codes, values = pd.factorize(cols["s"], sort=True)
-    order = np.lexsort((cols["k"], codes)) if "k" in cols else np.argsort(codes, kind="stable")
-    X, y, c = cols["x"][order], cols["y"][order], codes[order]
+    """The partition's rows, which arrive sorted by provider (and row identifier), with each
+    provider's rows and events and whether it can be solved."""
+    c, values = _runs(cols["s"])
+    X, y = cols["x"], cols["y"]
     events, rows = np.bincount(c, weights=y, minlength=len(values)), np.bincount(c, minlength=len(values))
-    return X, y, c, np.asarray(values), events, rows, (events > 0) & (events < rows)
+    return X, y, c, values, events, rows, (events > 0) & (events < rows)
+
+
+def _kept(X, y, c, keep):
+    """The rows of the providers that can be solved; no copy when that is all of them."""
+    return (X, y, c) if keep.all() else (X[keep], y[keep], c[keep])
 
 
 def _logistic_scan(p: int):
@@ -297,12 +347,13 @@ def _logistic_scan(p: int):
         cols = _stack(batches, p)
         if cols is None:
             return
-        _, y, _, _, events, rows, solvable = _providers(cols)
+        X, y, _, _, events, rows, solvable = _providers(cols)
         yield pa.RecordBatch.from_arrays(
             [pa.array([len(y)], pa.int64()), pa.array([len(rows)], pa.int64()),
              pa.array([int(np.sum(events <= 0))], pa.int64()), pa.array([int(np.sum(events >= rows))], pa.int64()),
-             pa.array([int(rows[~solvable].sum())], pa.int64()), pa.array([float(y.sum())], pa.float64())],
-            names=["n", "providers", "low", "high", "held", "e"])
+             pa.array([int(rows[~solvable].sum())], pa.int64()), pa.array([float(y.sum())], pa.float64()),
+             pa.array([_missing(X)], pa.int64()), pa.array([X.sum(axis=0).tobytes()], pa.binary())],
+            names=["n", "providers", "low", "high", "held", "e", "bad", "m"])
     return run
 
 
@@ -340,7 +391,7 @@ def _logistic_partition(p: int, beta: List[float]):
             yield _partial(pa, 0.0, np.zeros(p), np.zeros((p, p)), total, events)
             return
         with _one_thread():
-            out = kernels.logistic_partial(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64))
+            out = kernels.logistic_partial(*_kept(X, y, c, keep), np.asarray(beta, dtype=np.float64))
         yield _partial(pa, out["loglik"], out["gradient"], out["schur"], total, events, out["gamma"].tobytes())
     return run
 
@@ -411,10 +462,11 @@ def _logistic_effects(p: int, beta: List[float], inverse: bytes, median: float, 
         if not keep.any():
             return
         with _one_thread():
-            out = kernels.logistic_partial(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64))
+            X, y, c = _kept(X, y, c, keep)
+            out = kernels.logistic_partial(X, y, c, np.asarray(beta, dtype=np.float64))
             S = np.frombuffer(inverse, dtype=np.float64).reshape(p, p)
             variance = 1.0 / out["h"] + np.einsum("ij,jk,ik->i", out["xbar"], S, out["xbar"])
-            expected, null, exact = _null_sums(X[keep], y[keep], c[keep], np.asarray(beta, dtype=np.float64), median)
+            expected, null, exact = _null_sums(X, y, c, np.asarray(beta, dtype=np.float64), median)
         yield pa.RecordBatch.from_arrays(
             [pa.array(values[np.flatnonzero(solvable)], type=cols["key_type"]), pa.array(out["gamma"], pa.float64()),
              pa.array(np.sqrt(variance), pa.float64()),
@@ -442,17 +494,41 @@ def _table(features: Sequence[str], beta: np.ndarray, se: np.ndarray):
                          "p_value": [math.erfc(abs(v) / math.sqrt(2.0)) for v in z]})
 
 
-def _check(frame, conditions: Dict[str, Any], extra: Sequence[Any] = ()):
-    """Count the rows and refuse the data if any row meets one of the named conditions. The same
-    job materializes the cached table and computes any `extra` aggregates. Returns (rows, row)."""
+def _refuse(bad: Dict[str, int]) -> None:
+    bad = {name: int(count) for name, count in bad.items() if count}
+    if bad:
+        raise ValueError(f"the data cannot be fitted: rows by problem {bad}")
+
+
+def _check(frame, conditions: Dict[str, Any]) -> int:
+    """The light job: count the rows and refuse the data if any row meets one of the named
+    conditions. `frame` holds the columns other than the features, so only those are read."""
     from pyspark.sql import functions as F
 
     row = frame.agg(F.count("*").alias("n"), *[F.sum(F.when(c, 1).otherwise(0)).alias(name)
-                                               for name, c in conditions.items()], *extra).first()
-    bad = {name: int(row[name]) for name in conditions if row[name]}
-    if bad:
-        raise ValueError(f"the data cannot be fitted: rows by problem {bad}")
-    return int(row["n"]), row
+                                               for name, c in conditions.items()]).first()
+    _refuse({name: row[name] for name in conditions})
+    return int(row["n"])
+
+
+def _built(rows: int, seen: int, missing: int) -> None:
+    """After the pass that built the working set: refuse missing feature values, and a table that
+    did not give the rows that were validated."""
+    _refuse({"missing value": missing})
+    if seen != rows:
+        raise RuntimeError(f"the input gave {rows} rows when it was validated and {seen} when the working set was "
+                           "built: it is not a fixed table (store or cache it first)")
+
+
+def _clocked(evaluate, seconds: List[float]):
+    """`evaluate` with the time of every call appended to `seconds`."""
+    def run(*args, **kwargs):
+        started = clock.perf_counter()
+        try:
+            return evaluate(*args, **kwargs)
+        finally:
+            seconds.append(clock.perf_counter() - started)
+    return run
 
 
 @dataclass
@@ -474,6 +550,7 @@ class CoxModel:
     robust_covariance: Any = None     # the sandwich variance, each row its own cluster; on request
     residuals: Any = None             # pandas: row_id, martingale; on request
     standardized: Any = None          # pandas, per stratum: observed, expected at the national baseline, indirect_ratio
+    evaluation_seconds: List[float] = field(default_factory=list)   # each evaluation of the likelihood, in order
 
     @property
     def robust_standard_errors(self):
@@ -512,20 +589,29 @@ class CoxPH:
     time, event     columns of the exit time and the event indicator (0 or 1)
     features        covariate columns
     strata          column whose values define the strata, for example the provider; None for a fit
-                    without strata, which uses the time grid: no shuffle, two passes per evaluation,
-                    and times that take at most `max_times` distinct values
+                    without strata, which uses the time grid: two passes per evaluation, and times
+                    that take at most `max_times` distinct values
     ties            "breslow" or "efron"
     entry           optional column of entry times; a row is at risk at t when entry < t <= time
     weights, offset optional columns of case weights and of an offset on the linear predictor
-    row_id          optional numeric column that fixes the order of tied rows, and with it the last
-                    bits of the result
+    row_id          optional numeric column, different in every row, that fixes the order of the
+                    rows and with it the last bits of the result
     tol             the fit stops when the next Newton step is below tol standard errors
+    rows_per_partition, partitions
+                    the working set has `partitions` partitions, by default the number of rows over
+                    `rows_per_partition`, rounded up: with strata and without. Without strata
+                    partitions="input" leaves the rows in the input's own partitions instead: no
+                    shuffle, but as many tasks as the input happens to have and no fixed order.
+
+    `seconds` of the result: "prepare" ends when the working set is built, which the first
+    evaluation does (it is in "prepare"); "fit" is the evaluations after it. `evaluation_seconds`
+    has every evaluation.
     """
 
     def __init__(self, time: str, event: str, features: Sequence[str], strata: str, *, ties: str = "breslow",
                  entry: Optional[str] = None, weights: Optional[str] = None, offset: Optional[str] = None,
                  row_id: Optional[str] = None, tol: float = 1e-8, max_iterations: int = 50,
-                 rows_per_partition: int = ROWS_PER_PARTITION, partitions: Optional[int] = None,
+                 rows_per_partition: int = ROWS_PER_PARTITION, partitions: Any = None,
                  max_times: int = MAX_TIMES, baseline: bool = False, robust: bool = False, residuals: bool = False,
                  standardized: bool = False):
         if ties not in ("breslow", "efron"):
@@ -537,6 +623,8 @@ class CoxPH:
             raise NotImplementedError("the robust variance and the standardized measures are implemented for Breslow ties only")
         if residuals and not row_id:
             raise ValueError("residuals need row_id, to say which row each belongs to")
+        if isinstance(partitions, str) and (partitions != "input" or strata):
+            raise ValueError('partitions must be a number, or "input" for a fit without strata')
         self.max_times, self.baseline = max_times, baseline
         self.robust, self.want_residuals, self.want_standardized = robust, residuals, standardized
         self.time, self.event, self.features, self.strata = time, event, list(features), strata
@@ -545,18 +633,21 @@ class CoxPH:
         self.rows_per_partition, self.partitions = rows_per_partition, partitions
 
     def _columns(self, stratified: bool):
+        """The working set's columns; those among them that the light job reads (all but the
+        features and the row identifier); and the conditions it refuses, on those columns."""
         from pyspark.sql import functions as F
 
-        columns = [F.array(*[F.col(c).cast("double") for c in self.features]).alias("x"),
-                   F.col(self.time).cast("double").alias("t"), F.col(self.event).cast("double").alias("d")]
+        scalars = [F.col(self.time).cast("double").alias("t"), F.col(self.event).cast("double").alias("d")]
         if stratified:
-            columns.insert(0, F.col(self.strata).alias("s"))
-        for name, alias in ((self.weights, "w"), (self.offset, "o"), (self.entry, "e"),
-                            (self.row_id if stratified else None, "k")):
+            scalars.insert(0, F.col(self.strata).alias("s"))
+        for name, alias in ((self.weights, "w"), (self.offset, "o"), (self.entry, "e")):
             if name:
-                columns.append(F.col(name).cast("double").alias(alias))
+                scalars.append(F.col(name).cast("double").alias(alias))
+        columns = scalars + [F.array(*[F.col(c).cast("double") for c in self.features]).alias("x")]
+        if self.row_id:
+            columns.append(F.col(self.row_id).cast("double").alias("k"))
         conditions = {
-            "missing value": F.col("t").isNull() | F.col("d").isNull() | F.exists("x", lambda v: v.isNull() | F.isnan(v)),
+            "missing value": F.col("t").isNull() | F.col("d").isNull(),
             "event not 0 or 1": ~F.col("d").isin(0.0, 1.0),
         }
         if stratified:
@@ -567,7 +658,7 @@ class CoxPH:
             conditions["weight missing or not positive"] = F.col("w").isNull() | (F.col("w") <= 0)
         if self.offset:
             conditions["offset missing"] = F.col("o").isNull()
-        return columns, conditions
+        return columns, scalars, conditions
 
     def _settings(self, **more):
         return dict({"ties": self.ties, "strata": self.strata, "entry": self.entry, "weights": self.weights,
@@ -576,42 +667,72 @@ class CoxPH:
     def fit(self, frame) -> CoxModel:
         return self._fit_strata(frame) if self.strata else self._fit_time(frame)
 
+    def _grid(self, scalars, conditions: Dict[str, Any], has_entry: bool):
+        """The light job without strata: the row count, the refusals and the distinct times, from one
+        grouping by time of the columns other than the features. Returns (rows, grid)."""
+        from pyspark.sql import functions as F
+
+        names = [f"c{i}" for i in range(len(conditions))]
+        times = scalars.select(F.col("t").alias("v"), F.lit(1).alias("n"),
+                               *[F.when(c, 1).otherwise(0).alias(name) for name, c in zip(names, conditions.values())])
+        if has_entry:
+            times = times.unionByName(scalars.where(F.col("e").isNotNull()).select(
+                F.col("e").alias("v"), F.lit(0).alias("n"), *[F.lit(0).alias(name) for name in names]))
+        groups = times.groupBy("v").agg(F.sum("n").alias("n"), *[F.sum(name).alias(name) for name in names]) \
+            .limit(self.max_times + 2).collect()
+        _refuse({problem: sum(r[name] for r in groups) for problem, name in zip(conditions, names)})
+        values = [r["v"] for r in groups if r["v"] is not None]
+        if len(values) > self.max_times:
+            raise NotImplementedError(
+                f"the times take more than {self.max_times} distinct values; the time grid needs a limited number "
+                "(round them, raise max_times, or wait for the sorted layout: OPEN_ITEMS.md)")
+        return sum(int(r["n"]) for r in groups), np.sort(np.asarray(values, dtype=np.float64))
+
     def _fit_time(self, frame) -> CoxModel:
-        """Without strata: the time grid. The rows stay where they are; nothing is shuffled or sorted."""
+        """Without strata: the time grid. No pass needs the rows in any order; they are spread over
+        the partitions by row identifier and sorted by it so that every fit sums in the same order."""
         from pyspark.sql import functions as F
 
         ship_package(frame.sparkSession)
         started = clock.perf_counter()
         p, efron, has_entry = len(self.features), self.ties == "efron", bool(self.entry)
-        columns, conditions = self._columns(stratified=False)
+        columns, scalars, conditions = self._columns(stratified=False)
+        rows, grid = self._grid(frame.select(*scalars), conditions, has_entry)
         selected = frame.select(*columns)
-        work = (selected.repartition(self.partitions) if self.partitions else selected).persist()
+        if self.partitions == "input":
+            work = selected.persist()
+            partitions = work.rdd.getNumPartitions()
+        else:
+            partitions = self.partitions or max(1, math.ceil(rows / self.rows_per_partition))
+            if self.row_id:
+                work = selected.repartition(partitions, "k").sortWithinPartitions("k").persist()
+            else:
+                work = selected.repartition(partitions, F.xxhash64(*selected.columns)).persist()
         try:
-            rows, row = _check(work, conditions, [F.avg(F.col("x")[i]).alias(f"m{i}") for i in range(p)])
-            mu = np.array([row[f"m{i}"] for i in range(p)], dtype=np.float64)
-            times = work.select(F.col("t").alias("v"))
-            if has_entry:
-                times = times.union(work.where(F.col("e").isNotNull()).select(F.col("e").alias("v")))
-            values = [r["v"] for r in times.distinct().limit(self.max_times + 1).collect()]
-            if len(values) > self.max_times:
-                raise NotImplementedError(
-                    f"the times take more than {self.max_times} distinct values; the time grid needs a limited number "
-                    "(round them, raise max_times, or wait for the sorted layout: OPEN_ITEMS.md)")
-            grid = np.sort(np.asarray(values, dtype=np.float64))
-            K, partitions = len(grid), work.rdd.getNumPartitions()
-            size = 8 * timegrid.layout(K, p, efron, has_entry)["size"]
-            prepared = clock.perf_counter()
-            state = {"shift": 0.0}
+            K = len(grid)
+            where = timegrid.layout(K, p, efron, has_entry)
+            size = 8 * where["size"]
+            state, seconds = {"shift": 0.0, "mu": None}, []
 
             def evaluate(beta):
-                vector, shift = np.asarray(beta, dtype=np.float64).tobytes(), state["shift"]
-                tables = work.mapInArrow(_time_pass1(p, vector, mu.tobytes(), shift, grid.tobytes(), efron, has_entry),
-                                         "t binary")
-                if partitions * size > 768 * 2 ** 20:          # too much for the driver at once: add on the executors
-                    tables = tables.repartition(max(1, partitions * size // (128 * 2 ** 20))).mapInArrow(_time_sum(), "t binary")
-                total = None
+                vector, shift, first = np.asarray(beta, dtype=np.float64).tobytes(), state["shift"], state["mu"] is None
+                if first and np.any(beta):
+                    raise RuntimeError("the pass that builds the working set must be the evaluation at zero")
+                mu = np.zeros(p) if first else state["mu"]
+                tables = work.mapInArrow(_time_pass1(p, vector, mu.tobytes(), shift, grid.tobytes(), efron, has_entry, first),
+                                         TABLES)
+                if partitions * size > DRIVER_TABLES:          # too much for the driver at once: add on the executors
+                    tables = tables.repartition(max(1, partitions * size // (128 * 2 ** 20))).mapInArrow(_time_sum(), TABLES)
+                total, sums, missing = None, np.zeros(p), 0
                 for r in tables.collect():
                     total = timegrid.add(total, np.frombuffer(r["t"], dtype=np.float64))
+                    missing += r["bad"]
+                    if first and r["m"]:
+                        sums += np.frombuffer(r["m"], dtype=np.float64)
+                if first:
+                    _built(rows, 0 if total is None else int(round(total[where["rows"]][0])), missing)
+                    mu = state["mu"] = sums / rows
+                    timegrid.centre(total, K, p, mu, efron=efron, entry=has_entry)
                 out = timegrid.reduce(total, K, p, efron=efron, entry=has_entry)
                 if out["rows"] != rows:
                     raise RuntimeError("a pass did not see every row")
@@ -624,11 +745,14 @@ class CoxPH:
                 state.update(shift=out["eta_max"], events=out["events"], last=(out["cumulative"], shift))
                 return out["loglik"], out["score"], G - out["M"]
 
-            fit = maximize(evaluate, p, self.tol, self.max_iterations)
+            evaluate = _clocked(evaluate, seconds)
+            first = evaluate(np.zeros(p))                     # builds the working set
+            prepared = clock.perf_counter()
+            fit = maximize(evaluate, p, self.tol, self.max_iterations, start=first)
             done = clock.perf_counter()
         finally:
             work.unpersist()
-        hazard = None
+        mu, hazard = state["mu"], None
         if self.baseline:
             import pandas as pd
 
@@ -638,30 +762,41 @@ class CoxPH:
             hazard = _hazard_table(pd.DataFrame({"time": grid[at], "increment": increment[at]}), None)
         return CoxModel(self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"],
                         fit["evaluations"], fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
-                        self._settings(layout="time grid", distinct_times=K, passes_per_evaluation=2),
-                        {"prepare": prepared - started, "fit": done - prepared}, hazard)
+                        self._settings(layout="time grid", distinct_times=K, passes_per_evaluation=2,
+                                       rows_per_partition=None if self.partitions else self.rows_per_partition,
+                                       rows_placed="as in the input" if self.partitions == "input" else
+                                       ("by row_id" if self.row_id else "by a hash of the row")),
+                        {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds)
 
     def _fit_strata(self, frame) -> CoxModel:
+        from pyspark.sql import functions as F
+
         spark = frame.sparkSession
         ship_package(spark)
         started = clock.perf_counter()
         p = len(self.features)
-        columns, conditions = self._columns(stratified=True)
-        partitions = self.partitions or max(1, math.ceil(frame.count() / self.rows_per_partition))
-        work = frame.select(*columns).repartition(partitions, "s").persist()
+        columns, scalars, conditions = self._columns(stratified=True)
+        rows = _check(frame.select(*scalars), conditions)
+        partitions = self.partitions or max(1, math.ceil(rows / self.rows_per_partition))
+        order = ["s", F.desc("t")] + (["k"] if self.row_id else [])        # the kernel's order, computed once
+        work = frame.select(*columns).repartition(partitions, "s").sortWithinPartitions(*order).persist()
         try:
-            rows, _ = _check(work, conditions)
-            prepared = clock.perf_counter()
-            state = {}
+            state, seconds = {}, []
 
-            def evaluate(beta):
-                parts = work.mapInArrow(_cox_partition(p, [float(b) for b in beta], self.ties), PARTIAL).collect()
-                if sum(r["n"] for r in parts) != rows:
+            def evaluate(beta, validate=False):
+                parts = work.mapInArrow(_cox_partition(p, [float(b) for b in beta], self.ties, validate), PARTIAL).collect()
+                seen = sum(r["n"] for r in parts)
+                if validate:
+                    _built(rows, seen, sum(r["bad"] for r in parts))
+                if seen != rows:
                     raise RuntimeError("a pass did not see every row")
                 state["events"] = math.fsum(r["e"] for r in parts)
                 return _sum(parts, p)
 
-            fit = maximize(evaluate, p, self.tol, self.max_iterations)
+            evaluate = _clocked(evaluate, seconds)
+            first = evaluate(np.zeros(p), validate=True)      # builds the working set
+            prepared = clock.perf_counter()
+            fit = maximize(evaluate, p, self.tol, self.max_iterations, start=first)
             done = clock.perf_counter()
             hazard = None
             if self.baseline:
@@ -685,7 +820,7 @@ class CoxPH:
                         fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="whole strata", rows_per_partition=self.rows_per_partition,
                                        passes_per_evaluation=1),
-                        {"prepare": prepared - started, "fit": done - prepared}, hazard, **extra)
+                        {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds, **extra)
 
     def _standardized(self, work, frame, p: int, beta: np.ndarray):
         """He and Schaubel's two-stage measure, as pprof_py computes it for a provider-stratified fit: the national
@@ -720,6 +855,9 @@ class LogisticFE:
     Providers without events, or with only events, are held at the median intercept minus or plus
     `bound`: the estimate pprof_py's SerBIN converges to. Their rows are evaluated on the driver,
     so they must be few (at most MAX_HELD_ROWS rows).
+
+    `seconds` of the result: "prepare" ends when the working set is built and scanned, "fit" is
+    Newton's method, "provider_effects" the pass after it.
     """
 
     def __init__(self, outcome: str, features: Sequence[str], provider: str, *, bound: float = 10.0,
@@ -741,19 +879,19 @@ class LogisticFE:
         started = clock.perf_counter()
         p = len(self.features)
         key_type = frame.schema[self.provider].dataType.simpleString()
-        columns = [F.col(self.provider).alias("s"),
-                   F.array(*[F.col(c).cast("double") for c in self.features]).alias("x"),
-                   F.col(self.outcome).cast("double").alias("y")]
+        scalars = [F.col(self.provider).alias("s"), F.col(self.outcome).cast("double").alias("y")]
+        columns = scalars + [F.array(*[F.col(c).cast("double") for c in self.features]).alias("x")]
         if self.row_id:
             columns.append(F.col(self.row_id).cast("double").alias("k"))
-        partitions = self.partitions or max(1, math.ceil(frame.count() / self.rows_per_partition))
-        work = frame.select(*columns).repartition(partitions, "s").persist()
+        rows = _check(frame.select(*scalars), {"missing value": F.col("s").isNull() | F.col("y").isNull(),
+                                               "outcome not 0 or 1": ~F.col("y").isin(0.0, 1.0)})
+        partitions = self.partitions or max(1, math.ceil(rows / self.rows_per_partition))
+        keys = ["s"] + (["k"] if self.row_id else [])                      # the kernel's order, computed once
+        work = frame.select(*columns).repartition(partitions, "s").sortWithinPartitions(*keys).persist()
         try:
-            rows, row = _check(work, {
-                "missing value": F.col("s").isNull() | F.col("y").isNull() | F.exists("x", lambda v: v.isNull() | F.isnan(v)),
-                "outcome not 0 or 1": ~F.col("y").isin(0.0, 1.0)}, [F.avg(F.col("x")[i]).alias(f"m{i}") for i in range(p)])
-            mean = np.array([row[f"m{i}"] for i in range(p)], dtype=np.float64)
-            scan = work.mapInArrow(_logistic_scan(p), SCAN).collect()
+            scan = work.mapInArrow(_logistic_scan(p), SCAN).collect()      # builds the working set
+            _built(rows, sum(r["n"] for r in scan), sum(r["bad"] for r in scan))
+            mean = np.sum([np.frombuffer(r["m"], dtype=np.float64) for r in scan], axis=0) / rows
             providers, low, high = (sum(r[k] for r in scan) for k in ("providers", "low", "high"))
             held_rows = sum(r["held"] for r in scan)
             Xd = yd = cd = held_ids = held_low = None
@@ -768,7 +906,7 @@ class LogisticFE:
                 yd, cd = held["y"].to_numpy(dtype=float)[order], cd[order]
                 held_low = np.bincount(cd, weights=yd, minlength=len(held_ids)) <= 0
             prepared = clock.perf_counter()
-            state = {}
+            state, evaluation_seconds = {}, []
 
             def evaluate(beta):
                 parts = work.mapInArrow(_logistic_partition(p, [float(b) for b in beta]), PARTIAL).collect()
@@ -785,7 +923,7 @@ class LogisticFE:
                 state.update(median=bounds["median"], events=math.fsum(r["e"] for r in parts))
                 return value, gradient, schur
 
-            fit = maximize(evaluate, p, self.tol, self.max_iterations)
+            fit = maximize(_clocked(evaluate, evaluation_seconds), p, self.tol, self.max_iterations)
             fitted = clock.perf_counter()
             effects = None
             if self.provider_effects:
@@ -826,5 +964,5 @@ class LogisticFE:
             fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
             {"bound": self.bound, "provider": self.provider, "row_id": self.row_id, "tol_step_in_se": self.tol,
              "rows_per_partition": self.rows_per_partition},
-            seconds, providers=int(providers), bounded_low=int(low), bounded_high=int(high),
-            median_gamma=state["median"], provider_effects=effects)
+            seconds, evaluation_seconds=evaluation_seconds, providers=int(providers), bounded_low=int(low),
+            bounded_high=int(high), median_gamma=state["median"], provider_effects=effects)

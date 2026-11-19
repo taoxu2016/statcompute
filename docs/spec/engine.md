@@ -1,4 +1,4 @@
-# The engine: specification, version 0.5
+# The engine: specification, version 0.6
 
 `statcompute.engine` is the new implementation of the two case studies. This document says what
 it estimates, how it computes, what has been verified and what is missing. Evidence is from the
@@ -8,8 +8,8 @@ assistant's sandbox (Python 3.12, NumPy, PySpark 4.0.1 in local mode) unless a c
 
 | Model | Entry point | Options |
 |---|---|---|
-| Cox proportional hazards, with strata or without | `CoxPH(time, event, features, strata)`; `strata=None` for a fit without strata | `ties` "breslow" or "efron"; `entry` (entry times); `weights`; `offset`; `row_id`; `max_times` |
-| Logistic regression with one fixed intercept per provider | `LogisticFE(outcome, features, provider)` | `bound` (default 10); `row_id`; `provider_effects` |
+| Cox proportional hazards, with strata or without | `CoxPH(time, event, features, strata)`; `strata=None` for a fit without strata | `ties` "breslow" or "efron"; `entry` (entry times); `weights`; `offset`; `row_id`; `max_times`; `rows_per_partition`, `partitions` |
+| Logistic regression with one fixed intercept per provider | `LogisticFE(outcome, features, provider)` | `bound` (default 10); `row_id`; `provider_effects`; `rows_per_partition`, `partitions` |
 
 Both return coefficients, their covariance (the inverse information), the log-likelihood, the
 iteration count and the convergence measure, and add a linear-predictor column to a table on
@@ -46,14 +46,16 @@ cancellation the identity otherwise suffers when stratum means are far apart.
 
 ### 2.1 With strata: whole strata in a partition
 
-Each partition holds whole strata, the kernel sorts them by time, and one pass returns the
-log-likelihood, the score and the information (section 4).
+Each partition holds whole strata, sorted once when the working set is built: by stratum, time
+descending and row identifier. One pass returns the log-likelihood, the score and the information
+(section 4); it does not sort.
 
 ### 2.2 Without strata: the time grid
 
 Without strata every risk set spans the whole table, so no partition can hold one. The engine then
 uses the fact that times take few distinct values (days over some years: 1,825). It needs at most
-`max_times` distinct values, 20,000 by default, and neither shuffles nor sorts the rows.
+`max_times` distinct values, 20,000 by default. No pass needs the rows in any order; section 4 says
+where they are put and why.
 
 *Pass 1.* Every batch of rows adds (r_i, r_i x_i) to a table at the row's exit time; with Efron
 ties the same for the rows that died; with entry times the same at the row's entry time. That is
@@ -76,10 +78,10 @@ and entry times. The information is the sum over batches minus the matrix from p
 | Quantity | Value |
 |---|---|
 | Passes per evaluation | 2 |
-| Shuffles, sorts | None; rows stay in the partitions and batches they come in |
+| Shuffles, sorts | One of each, when the working set is built (section 4); none with `partitions="input"` |
 | To the driver per partition, pass 1 | (p + 1) numbers per distinct time, times 1 to 3 tables: 1.5 MB at 100 features and 1,825 days, Breslow, no entry times |
 | Memory in a Python worker | One Arrow batch at a time (10,000 rows by default), whatever the partition's size |
-| Centring | At the overall means: there is one stratum |
+| Centring | At the overall means: there is one stratum. The first pass runs at beta = 0 before the means are known; it returns the feature sums, and the driver centres its tables afterwards, which is exact there because the risk scores at beta = 0 do not depend on the centring |
 
 *What is new and what is not* (search of 2026-11-17, `docs/research/prior-art-time-grid.md`). The
 identity is old, and the coxdev package of Taylor, Hastie and Narasimhan publishes it as a
@@ -138,22 +140,51 @@ providers.
 | `exact_p`, `exact_flag` | The exact test, pprof_py's default: the observed count against the Poisson-binomial distribution of the rows' probabilities under the median effect. Two-sided mid-p value: twice the smaller tail, each tail counting half the probability of the observed count. The flag has the sign of events - expected. Cost is quadratic in a provider's rows |
 | `direct_expected`, `direct_ratio`, `direct_rate` | Only with `LogisticFE(..., direct=True)`: events expected over the whole table if every row had this provider's effect; that over all observed events; that over all rows, in percent. One more pass, with rows times providers evaluations |
 
-## 4. Layout, passes and reproducibility
+## 4. Layout, jobs and reproducibility
 
-- **One shuffle.** Rows are repartitioned by stratum or provider, features packed into one array
-  column, and the table cached. The number of partitions is ceil(rows / `rows_per_partition`), so it
-  does not depend on how many executors happen to be attached.
-- **One job per evaluation.** Each partition goes to a Python worker as Arrow batches; a NumPy
-  kernel returns its sums; the driver adds them in partition order. A Cox fit of three iterations is
-  a row count, one validation job and four passes. A logistic fit adds one scan and one pass for
-  provider effects.
+- **The working set.** The rows are shuffled once: by stratum or provider when there is one, by row
+  identifier without strata (by a hash of the whole row when no `row_id` is given). Spark then sorts
+  every partition into the order the kernel works in: stratum, time descending, row identifier for
+  Cox with strata; provider, row identifier for the logistic model; row identifier without strata.
+  The features are packed into one array column and the table is cached. So the order is computed
+  once and stored, and no pass sorts, factorizes or copies its rows again.
+- **Partitions.** ceil(rows / `rows_per_partition`) in all three cases, 50,000 rows each by default,
+  unless `partitions` is given. The number depends on the data and the settings only: not on the
+  executors attached, and not on the files the input is stored in. Without strata
+  `partitions="input"` leaves the rows in the input's own partitions (no shuffle, no sort): the
+  layout before version 0.6, kept for comparison.
+- **Jobs.** A light job reads every column except the features. It counts the rows, refuses rows
+  that cannot be fitted and, without strata, collects the distinct times in the same pass. The
+  working set is then built by the first pass over it, in that pass's job: the first evaluation for
+  Cox, the scan of the providers for the logistic model. That pass counts the rows with a missing
+  feature, and the fit is refused if there are any. A Cox fit of three iterations is the light job
+  and four passes (eight passes without strata); a logistic fit is the light job, the scan, four
+  passes and one more for the provider effects. Up to version 0.5 a fit with strata or providers
+  started with a row count and then a validation job that built the cache; a fit without strata
+  with that validation job and another job for the distinct times.
+- **Times reported.** `seconds["prepare"]` ends when the working set exists. For Cox that includes
+  the first evaluation, because it is the pass that builds the working set; `seconds["fit"]` is the
+  evaluations after it. For the logistic model the scan builds it, and "fit" is every evaluation.
+  `evaluation_seconds` has each evaluation's time, the first included.
 - **Memory.** The kernels run in Python workers, outside the executors' JVM heap. One partition of
   50,000 rows and 180 features is 72 MB as a matrix, several times that at the peak of a pass.
+  Without strata a worker holds one Arrow batch at a time, and every partition returns its pass-1
+  tables to the driver: 100 partitions of 1.5 MB at 5 million rows, 100 features and 1,825 days.
 - **Stopping.** Newton's method stops when the next step is below `tol` standard errors in every
   coefficient (class T_CONV, default 1e-8), and reports that number.
-- **Reproducibility.** With `row_id`, two fits of the same data with the same settings in the same
-  session return identical bits (tested). Across layouts, or BLAS builds, results agree to rounding
-  (1e-9 standard errors, tested), not bit for bit. This is weaker than pprof_spark's guarantee.
+- **Reproducibility.** With `row_id`, two fits of the same data with the same settings return
+  identical bits, with strata and without, however the input is partitioned (tested for Cox, also
+  from a repartitioned input). What must stay the same: `rows_per_partition` or `partitions`; without
+  strata also the Arrow batch size, since the sums run batch by batch, and tables small enough to be
+  added on the driver; NumPy and its BLAS. The layout does not depend on the number of executors,
+  so neither should the bits; that has been tested in local mode only. Without `row_id`, with
+  `partitions="input"`, across layouts or across BLAS builds, results agree to rounding (1e-9
+  standard errors, tested), not bit for bit. This is weaker than pprof_spark's guarantee.
+- **Refusals.** Rows are refused by name and count, as a `ValueError`: by the light job for a missing
+  time, event, stratum, weight or offset, an event that is not 0 or 1, an entry time not before the
+  exit; by the pass that builds the working set for a missing feature. A table that gives another
+  number of rows to that pass than to the light job stops the fit with a `RuntimeError`: it is not
+  a fixed table.
 
 ## 5. Verification
 
@@ -170,17 +201,97 @@ providers.
 | The time grid gives the same fit as the stratum kernel run as one stratum | Same file: both tie methods, with and without weights, offset and entry | Coefficients within 1e-10 standard errors (measured: 6e-14) |
 | Unstratified fits equal pprof_py's | Same file: 4 combinations | As for the stratified fits: equal up to the Newton step pprof_py leaves |
 | Unstratified Cox on Spark equals one machine, and does not depend on partitions or batch sizes | Same file | Within 1e-9 standard errors with 7 partitions and batches of 700 rows |
+| Rows given in the kernel's order need no sort | `test_engine_kernels.py`: both tie methods with weights, offset and entry; baseline, expected events, robust middle | Identical bits to the kernel's own sort of the same rows. Strata in another arrangement and with text labels: within 1e-11 |
+| Fits repeat bit for bit with `row_id`, with strata and without, also from a repartitioned input | `test_engine_spark.py`, `test_engine_time.py` | Identical coefficients, covariance and log-likelihood. Rows placed by a hash, or left in the input's partitions: within 1e-9 standard errors |
+| Tables centred after the first pass equal tables accumulated centred | `test_engine_time.py`: both tie methods, with weights, offset and entry | Score and rank-one matrix within 1e-9, cumulative hazard within 1e-12, relative |
+| Missing features are refused by the pass that builds the working set | Both files: Cox with and without strata, logistic; null and NaN | The same message and count as before |
+| Tables too large for the driver are added on the executors | `test_engine_time.py`, with the limit set to zero | Within 1e-9 standard errors |
 
 | The baseline hazard equals pprof_py's | `test_engine_outputs.py`: both tie methods, with strata and without, with weights | Same rows; hazard within 1e-8 relative (measured: 8e-10 with strata, 5e-14 without) |
 | Standardized ratios and the score and Wald tests equal pprof_py's | Same file, with one provider at the bound | Ratios, rates and expected counts within 1e-9; score statistics within 1e-9; Wald within 1e-7; identical flags |
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-104 tests pass. Nothing of the engine has run on Databricks yet.
+The repository has 111 tests. In the sandbox of 2026-11-19 (no R installed) 108 pass and the 3
+that need R are skipped.
 
-One observation about the reference, not the engine: with its default tolerance pprof_py's Efron fit
-can stop 5e-5 standard errors short of the root (seen at 200,000 rows without strata). Comparisons
-with it therefore use its tightest tolerance.
+### 5.1 Version 0.6 against version 0.5
+
+The sorted working set must not change a fit. Version 0.9.0 of the repository (commit `387fc16`) and
+this version were run on the same ten cases in the sandbox: Cox with strata on 6,000 rows with every
+option, both tie methods, numeric and text strata, and all outputs; the logistic model on 8,000 rows
+with providers at the bound and direct standardization; Cox (Breslow and Efron) and the logistic
+model on 400,000 rows by 50 features and 200,000 by 100.
+
+| Quantity | Result |
+|---|---|
+| Coefficients, covariance, log-likelihood, iterations, of all ten | Identical bits |
+| Baseline hazard, robust covariance, martingale residuals, provider effects with tests | Identical bits |
+| Expected events of the Cox standardized ratio; direct standardization | Differ by 1e-15, relative: these sums run over the rows in batch order, which is now sorted |
+
+This is a comparison of two versions, not a test in the repository. Fits without strata changed
+layout and agree with version 0.5 to rounding only; their tests against explicit risk sets, the
+stratum kernel and pprof_py are those of the table above.
+
+### 5.2 On Databricks
+
+The maintainer ran version 0.9.0 on 2026-11-18: plans `compare_5m` and `unstratified_5m`, 5 million
+rows, Runtime 17.3 LTS with Photon, autoscaling from 1 to 10 workers. Medians as reported (the
+records are not in the repository yet):
+
+| Model, features | Whole call, s | Of which Newton's method, s |
+|---|---|---|
+| Cox with strata, 50 | 26.8 | 14.9 |
+| Cox with strata, 100 | 24.1 | 13.9 |
+| Logistic, 50 | 21.2 | 8.3 |
+| Logistic, 100 | 22.1 | 9.5 |
+| Cox without strata, 50 | 45.5 | 19.6 |
+| Cox without strata, 100 | 60.6 | 34.2 |
+
+Without strata the fits used 8 to 10 of 40 cores. Their task counts, 190 and 366, fit an input of
+17 and 33 partitions, which is the number of files the generator writes at these sizes, and the
+layout of version 0.5 kept the input's partitions. Version 0.6 has not run on a cluster.
+
+### 5.3 The reference's stopping rule
+
+Without strata the engine and pprof_py differed on the cluster by 2.5e-9 standard errors at 50
+features and by 4.3e-5 at 100, with pprof_py at its default tolerance and at its tightest alike.
+The cause is in pprof_py's Newton loop (`algorithms/survival/optimization.py`), not in the engine.
+The loop halves a step whenever the new log-likelihood is lower than the old one, and tests
+convergence afterwards. At the last iteration the true gain is as small as the rounding of the
+log-likelihood, so whether the computed value is lower is chance. When it is, the step is halved
+until it is not; the change is then far below any `eps`, the fit reports convergence, and the
+estimate is left a fraction 1 - 2^-h of the last Newton step short, h being the number of halvings.
+
+The programs are probes A-8 and A-9 in `statcompute/lab/probes/`; their output is in
+`docs/research/reference-stopping-rule.md`.
+
+| Evidence (sandbox, 2026-11-19) | Result |
+|---|---|
+| pprof_py 0.7.0 on the benchmark's design, 100,000 rows by 100 features, 12 seeds; its likelihood calls counted by a wrapper in the calling process | 11 seeds: no halving, within 9e-12 standard errors of the engine. Seed 10: 3 iterations, converged, 18 calls instead of 4; the third step halved 14 times; 3.495e-5 standard errors from the engine. Identical at `eps` 1e-9 and 1e-13 |
+| The same case, pprof_py's own kernel | Newton step remaining at its estimate: 3.495e-5 standard errors; at the engine's: 6e-12 |
+| The cluster's two datasets regenerated (identifiers `...7e0c0d91fc` and `...c3994f7499`; 2,590,775 and 2,899,213 events), Newton's method with the engine's kernels | Steps of 66.3, 0.699 and 1.263e-4 standard errors at 50 features; 50.2, 0.423 and 4.414e-5 at 100; then 4e-12 and 5e-13, so three iterations, as on the cluster. The third step raises the log-likelihood by 1.4e-7 and 1.6e-8, where neighbouring doubles are 7.5e-9 apart |
+| The score at every iterate, recomputed in 80-bit arithmetic by other code on uncentred covariates | Within 3e-11 standard errors of the engine's at 50 features, 8e-12 at 100 |
+| The third step at 100 features, cut to 2^-6 | Leaves 5.54e-8 in absolute terms and 4.34e-5 standard errors: the two numbers the cluster reported. Five halvings would leave 4.28e-5, seven 4.38e-5 |
+
+The six halvings on the cluster are an inference from those two numbers. pprof_py could not be run
+at that size in the sandbox, and its rounding depends on the cluster's processor and BLAS; counting
+its likelihood calls there would settle it (OI-24). At 50 features the third step was taken whole:
+2.5e-9 is not a fraction 1 - 2^-h of 1.263e-4.
+
+What follows for comparisons: pprof_py's tightest tolerance does not prevent this, so decision D-06
+does not suffice as worded (D-09 is proposed). The tests compare as before: the two estimates must
+differ by the Newton step that remains at pprof_py's estimate, and that step may be up to 1e-5
+standard errors. On the cluster's 100-feature data it was 4.3e-5, above that bound.
+
+The 80-bit recomputation also shows a property of the engine. The gap of 3e-11 standard errors is the
+same at every iterate: it comes from the score's first term, the sum over the deaths of the centred
+covariates. For covariates with few distinct values the rounding of that sum does not average out:
+over the 50 chunks of the 50-feature data it adds up to 2.776e-8, seven times what independent
+errors would give, and the whole gap at beta = 0 is 2.777e-8; without that term 1e-13 standard
+errors remain. So the engine's root is the exact root to 3e-11 standard errors here, not to the
+1e-12 its own stopping measure shows. That is far below every tolerance class and grows with the
+rows (OI-27).
 
 ## 6. Not implemented
 
@@ -190,7 +301,6 @@ with it therefore use its tightest tolerance.
 | More than 200,000 rows in providers without events or with only events | Refused |
 | Times with more than `max_times` distinct values, without strata | Refused. Continuous times need a sorted layout |
 | A few large strata | The time grid handles one stratum; a grid per stratum is the natural extension |
-| Identical bits across runs, without strata | The sums follow the input's partitions and batches, so runs agree to rounding |
+| Identical bits across runs without strata and without `row_id` | The rows are placed by a hash but not sorted, so runs agree to rounding |
 | For fits without strata: robust variance, residuals, standardized measures. For all fits: robust variance with Efron ties or with clusters of several rows; direct standardization; provider tests; survival curves for new rows | Cox |
 | Confidence intervals for effects and ratios; funnel limits; binomial trials; a faster exact test for very large providers | Logistic |
-| Sorting once instead of in every pass | A pass factorizes and sorts its partition each time; storing the order at preparation would remove that |

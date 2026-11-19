@@ -80,6 +80,29 @@ def test_cox_kernel_adds_over_blocks_and_ignores_row_order():
     assert np.allclose(parts[0]["information"] + parts[1]["information"], whole["information"], rtol=1e-11, atol=0)
 
 
+@pytest.mark.parametrize("ties", ["breslow", "efron"])
+def test_rows_given_in_the_kernels_order_need_no_sort_and_give_the_same_bits(ties):
+    """Round 12: the working set is stored sorted, so no pass sorts or copies it again."""
+    X, time, event, strata, entry, w, o, beta = survival_data(seed=13)
+    key = np.random.default_rng(1).permutation(len(time)).astype(float)
+    more = dict(baseline=True, rows=True, robust=ties == "breslow")
+    sorted_here = cox_partial(X, time, event, strata, beta, ties=ties, weights=w, offset=o, entry=entry, order=key, **more)
+    perm = np.lexsort((key, -time, strata))
+    given = cox_partial(X[perm], time[perm], event[perm], strata[perm], beta, ties=ties, weights=w[perm], offset=o[perm],
+                        entry=entry[perm], presorted=True, **more)
+    for name in ("loglik", "score", "information", "events", "deaths") + (("meat",) if ties == "breslow" else ()):
+        assert np.array_equal(sorted_here[name], given[name]), name
+    assert np.array_equal(sorted_here["expected"][perm], given["expected"])
+    assert all(np.array_equal(sorted_here["baseline"][k], given["baseline"][k]) for k in ("stratum", "time", "increment"))
+    # the strata may lie in any arrangement and carry any labels: the same sums, to rounding
+    other = np.lexsort((key, -time, -strata))
+    labels = np.array([f"unit {s}" for s in strata], dtype=object)
+    relaid = cox_partial(X[other], time[other], event[other], labels[other], beta, ties=ties, weights=w[other],
+                         offset=o[other], entry=entry[other], presorted=True)
+    assert abs(relaid["loglik"] - sorted_here["loglik"]) <= 1e-12 * abs(sorted_here["loglik"])
+    assert np.max(np.abs(relaid["information"] - sorted_here["information"])) <= 1e-11 * np.max(np.abs(sorted_here["information"]))
+
+
 def test_the_information_survives_strata_whose_means_are_far_apart():
     """Roadmap F-4: without centring within strata the weighted-Gram form loses digits."""
     rng = np.random.default_rng(3)

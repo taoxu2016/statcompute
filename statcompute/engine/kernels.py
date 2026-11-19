@@ -33,7 +33,8 @@ def _starts(sorted_values: np.ndarray) -> np.ndarray:
 def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.ndarray, beta: np.ndarray, *,
                 ties: str = "breslow", weights: Optional[np.ndarray] = None, offset: Optional[np.ndarray] = None,
                 entry: Optional[np.ndarray] = None, order: Optional[np.ndarray] = None,
-                baseline: bool = False, robust: bool = False, rows: bool = False) -> Dict[str, object]:
+                baseline: bool = False, robust: bool = False, rows: bool = False,
+                presorted: bool = False) -> Dict[str, object]:
     """Sums for the rows given, which must hold whole strata.
 
     With `baseline` the result also holds, for every event time of every stratum, the increment of
@@ -48,17 +49,28 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     entry          entry times: a row is at risk at t when entry < t <= time. NaN or -inf: at risk from the start
     order          optional tie-breaker (for example a row identifier) that fixes the order of rows
                    with equal stratum and time, and with it the last bits of the sums
+    presorted      the rows already come in the kernel's order: the rows of a stratum together, and
+                   within a stratum by time descending (ties in the order wanted). Nothing is sorted
+                   or copied then, `order` is not used, and `strata` may hold any values that differ
+                   between neighbouring strata. The sums are the same, bit for bit, as from the same
+                   rows in the same order after the kernel's own sort.
 
     Returns loglik, score, information, events (weighted) and deaths (count).
     """
     if ties not in ("breslow", "efron"):
         raise ValueError("ties must be 'breslow' or 'efron'")
     n, p = X.shape
-    keys = (-time, strata) if order is None else (order, -time, strata)
-    perm = np.lexsort(keys)                               # stratum ascending, then time descending
-    X, t, s = X[perm], time[perm], strata[perm]
-    d = event[perm].astype(np.float64)
-    w = np.ones(n) if weights is None else weights[perm].astype(np.float64)
+    if presorted:
+        perm = None
+        placed = lambda v: v                              # noqa: E731
+        t, s = time, strata
+    else:
+        keys = (-time, strata) if order is None else (order, -time, strata)
+        perm = np.lexsort(keys)                           # stratum ascending, then time descending
+        placed = lambda v: v[perm]                        # noqa: E731
+        X, t, s = X[perm], time[perm], strata[perm]
+    d = placed(event).astype(np.float64)
+    w = np.ones(n) if weights is None else placed(weights).astype(np.float64)
 
     first = _starts(s)
     start = np.flatnonzero(first)
@@ -68,7 +80,7 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     Xc = X - centre[sid]                                  # centred within the stratum
     eta = Xc @ beta
     if offset is not None:
-        eta = eta + offset[perm]
+        eta = eta + placed(offset)
     shift = np.maximum.reduceat(eta, start)
     eta = eta - shift[sid]                                # a constant per stratum changes nothing; avoids overflow
     r = w * np.exp(eta)                                   # weighted risk score
@@ -92,7 +104,7 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
 
     truncated = False
     if entry is not None:
-        e = entry[perm].astype(np.float64)
+        e = placed(entry).astype(np.float64)
         finite = np.isfinite(e)
         truncated = bool(finite.any())
     if truncated:
@@ -102,7 +114,7 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
         tcode = np.searchsorted(values, t[ends])
         ecode = np.full(n, -1, dtype=np.int64)
         ecode[finite] = np.searchsorted(values, e[finite])
-        by_entry = np.lexsort((-ecode, s))                # stratum ascending, entry descending, none last
+        by_entry = np.lexsort((-ecode, sid))              # strata as they lie, entry descending, none last
         ekey = sid[by_entry].astype(np.int64) * (V + 2) + (V - ecode[by_entry])
         gkey = gsid.astype(np.int64) * (V + 2) + (V - tcode)
         ce0 = np.cumsum(r[by_entry], dtype=np.longdouble)
@@ -167,9 +179,12 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     out = {"loglik": loglik, "score": score, "information": information,
            "events": float(weighted_deaths.sum()), "deaths": int(deaths.sum())}
     if rows:
-        expected = np.empty(n)
-        expected[perm] = E
-        out["expected"] = expected
+        if presorted:
+            out["expected"] = E
+        else:
+            expected = np.empty(n)
+            expected[perm] = E
+            out["expected"] = expected
     if robust:
         if h_tied is not None:
             raise NotImplementedError("the robust variance is implemented for Breslow ties only")

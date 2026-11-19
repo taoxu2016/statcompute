@@ -1,7 +1,7 @@
 """Cox regression on a time grid: the layout for fits without strata.
 
 When rows are not tied to a stratum that fits in one partition, the risk sets span the whole table.
-This layout never sorts or shuffles the rows. Each evaluation takes two passes over the rows in
+This layout needs the rows in no order. Each evaluation takes two passes over the rows in
 whatever partitions and batches they come:
 
   pass 1   every batch adds its rows' risk scores r and r*x to a table indexed by time (and, where
@@ -97,6 +97,19 @@ def add(total: Optional[np.ndarray], part: np.ndarray) -> np.ndarray:
     total += part
     total[-1] = top
     return total
+
+
+def centre(tables: np.ndarray, K: int, p: int, mu: np.ndarray, *, efron: bool, entry: bool) -> None:
+    """Turn summed pass-1 tables that were accumulated at beta = 0 with mu = 0 into the tables that
+    mu would have given, in place. At beta = 0 the risk scores do not depend on the centring, so
+    each sum of r*x only loses mu times its sum of r, and the score mu times the weighted events.
+    This lets the first pass over the rows also yield the feature means it should be centred at."""
+    where = layout(K, p, efron, entry)
+    for name in ("exit", "dead", "entry"):
+        if where[name].stop > where[name].start:
+            table = tables[where[name]].reshape(K, p + 1)
+            table[:, 1:] -= table[:, :1] * mu
+    tables[where["score"]] -= tables[where["weighted_deaths"]].sum() * mu
 
 
 def _suffix(values: np.ndarray) -> np.ndarray:

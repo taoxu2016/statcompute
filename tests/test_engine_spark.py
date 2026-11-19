@@ -44,6 +44,10 @@ def test_cox_on_spark_repeats_bit_for_bit_and_takes_strata_of_any_type(survival)
     for other in (named, relaid):
         assert np.max(np.abs(other.coefficients - first.coefficients) / first.standard_errors) < 1e-9
     assert relaid.partitions == 9
+    # the working set does not depend on how the input happens to be partitioned: the same bits again
+    moved = CoxPH("time", "event", FEATURES, "provider", row_id="id", rows_per_partition=2500).fit(frame.repartition(5))
+    assert np.array_equal(first.coefficients, moved.coefficients) and first.log_likelihood == moved.log_likelihood
+    assert len(first.evaluation_seconds) == first.evaluations
 
 
 def test_cox_on_spark_agrees_with_pprof_py(survival):
@@ -96,6 +100,20 @@ def test_data_that_cannot_be_fitted_are_refused_with_the_reason(survival):
         CoxPH("time", "event", FEATURES, "provider", entry="late").fit(frame.selectExpr("*", "time AS late"))
     with pytest.raises(NotImplementedError, match="distinct values"):
         CoxPH("time", "event", FEATURES, None, max_times=5).fit(frame)
+
+
+def test_missing_features_are_refused_by_the_pass_that_builds_the_working_set(spark, data_root, survival):
+    """Round 12: the light job reads no features; the first pass over them counts the rows it cannot use."""
+    frame, _ = survival
+    holed = "CASE WHEN id = 5 THEN double('NaN') WHEN id = 77 THEN NULL ELSE x1 END AS x1"
+    with pytest.raises(ValueError, match="missing value': 2"):
+        CoxPH("time", "event", FEATURES, "provider", row_id="id", rows_per_partition=2500).fit(
+            frame.selectExpr("id", "provider", "time", "event", holed, *FEATURES[1:]))
+    logit = materialize(spark, DatasetSpec("logistic_fe", 8000, 20, 5), data_root).frame(spark)
+    with pytest.raises(ValueError, match="missing value': 2"):
+        LogisticFE("y", FEATURES, "provider", row_id="id").fit(logit.selectExpr("id", "provider", "y", holed, *FEATURES[1:]))
+    with pytest.raises(ValueError, match="outcome not 0 or 1': 1"):
+        LogisticFE("y", FEATURES, "provider").fit(logit.selectExpr("provider", *FEATURES, "CASE WHEN id = 9 THEN 3 ELSE y END AS y"))
 
 
 def test_the_engine_runs_in_the_harness(spark, tmp_path):

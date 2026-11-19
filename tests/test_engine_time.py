@@ -102,6 +102,24 @@ def test_the_fit_agrees_with_pprof_py(ties, options):
     assert abs(ours["loglik"] - theirs.log_likelihood_) <= 1e-9 * abs(theirs.log_likelihood_)
 
 
+def test_tables_centred_after_the_pass_equal_tables_accumulated_centred():
+    """Round 12: the pass that builds the working set runs at beta = 0 before the feature means are known."""
+    X, time, event, entry, w, o = follow_up(n=5000, seed=43)
+    grid = np.unique(np.concatenate((time, entry[np.isfinite(entry)])))
+    K, p = len(grid), X.shape[1]
+    mu, zero, d = X.mean(axis=0), np.zeros(p), event.astype(float)
+    for efron in (False, True):
+        centred, late = timegrid.new_tables(K, p, efron, True), timegrid.new_tables(K, p, efron, True)
+        timegrid.accumulate(centred, grid, X, time, d, zero, mu, 0.0, efron=efron, weights=w, offset=o, entry=entry)
+        timegrid.accumulate(late, grid, X, time, d, zero, zero, 0.0, efron=efron, weights=w, offset=o, entry=entry)
+        timegrid.centre(late, K, p, mu, efron=efron, entry=True)
+        a, b = (timegrid.reduce(t, K, p, efron=efron, entry=True) for t in (centred, late))
+        assert abs(a["loglik"] - b["loglik"]) <= 1e-12 * abs(a["loglik"]) and a["rows"] == b["rows"] == 5000
+        assert np.max(np.abs(a["score"] - b["score"])) <= 1e-9 * np.max(np.abs(a["score"]))
+        assert np.max(np.abs(a["M"] - b["M"])) <= 1e-9 * np.max(np.abs(a["M"]))
+        assert np.max(np.abs(a["cumulative"] - b["cumulative"])) <= 1e-12 * a["cumulative"][-1]
+
+
 # ---------------------------------------------------------------- on Spark
 @pytest.fixture(scope="module")
 def survival(spark, data_root):
@@ -137,6 +155,52 @@ def test_unstratified_cox_on_spark_equals_the_single_machine_fit(spark, survival
     assert np.max(np.abs(recut.coefficients - model.coefficients) / model.standard_errors) < 1e-9
 
 
+def test_unstratified_cox_on_spark_repeats_bit_for_bit_whatever_the_inputs_partitions(survival):
+    """Round 12: without strata the rows are placed and sorted by row_id, so every fit adds in the same order."""
+    frame, _ = survival
+    fit = lambda data, **more: CoxPH("time", "event", FEATURES, None, ties="efron", entry="entry", weights="w", offset="o",  # noqa: E731
+                                     rows_per_partition=1700, **more).fit(data)
+    first, second, relaid = fit(frame, row_id="id"), fit(frame, row_id="id"), fit(frame.repartition(5), row_id="id")
+    assert first.partitions == 4 and first.settings["rows_placed"] == "by row_id"
+    for other in (second, relaid):
+        assert np.array_equal(first.coefficients, other.coefficients) and np.array_equal(first.covariance, other.covariance)
+        assert first.log_likelihood == other.log_likelihood
+    assert len(first.evaluation_seconds) == first.evaluations
+    # placed by a hash of the row, or left in the input's own partitions: the same fit, to rounding
+    hashed, asis = fit(frame), fit(frame, partitions="input")
+    assert hashed.settings["rows_placed"] == "by a hash of the row" and asis.settings["rows_placed"] == "as in the input"
+    for other in (hashed, asis):
+        assert np.max(np.abs(other.coefficients - first.coefficients) / first.standard_errors) < 1e-9
+        assert np.max(np.abs(other.standard_errors / first.standard_errors - 1)) < 1e-10
+    with pytest.raises(ValueError, match="without strata"):
+        CoxPH("time", "event", FEATURES, "provider", partitions="input")
+
+
+def test_unstratified_cox_refuses_bad_rows_in_the_light_job_and_missing_features_in_the_first_pass(survival):
+    frame, _ = survival
+    holed = frame.selectExpr("id", "time", "event", "CASE WHEN id = 5 THEN double('NaN') WHEN id = 77 THEN NULL ELSE x1 END AS x1",
+                             *FEATURES[1:])
+    with pytest.raises(ValueError, match="missing value': 2"):
+        CoxPH("time", "event", FEATURES, None, row_id="id").fit(holed)
+    with pytest.raises(ValueError, match="event not 0 or 1': 1"):
+        CoxPH("time", "event", FEATURES, None).fit(frame.selectExpr("time", *FEATURES, "CASE WHEN id = 5 THEN 2 ELSE event END AS event"))
+    with pytest.raises(ValueError, match="entry not before exit"):
+        CoxPH("time", "event", FEATURES, None, entry="late").fit(frame.selectExpr("*", "time AS late"))
+
+
+def test_tables_too_large_for_the_driver_are_added_on_the_executors_first(survival, monkeypatch):
+    from statcompute.engine import spark as engine_spark
+
+    frame, _ = survival
+    fit = lambda: CoxPH("time", "event", FEATURES, None, ties="efron", entry="entry", weights="w", row_id="id",  # noqa: E731
+                        rows_per_partition=1700).fit(frame)
+    direct = fit()
+    monkeypatch.setattr(engine_spark, "DRIVER_TABLES", 0)
+    summed = fit()
+    assert summed.rows == direct.rows == 6000 and summed.iterations == direct.iterations
+    assert np.max(np.abs(summed.coefficients - direct.coefficients) / direct.standard_errors) < 1e-9
+
+
 def test_unstratified_and_stratified_fits_differ_as_they_should(survival):
     """A guard against fitting the wrong model: the data have provider effects, so the two estimates differ."""
     frame, _ = survival
@@ -158,3 +222,9 @@ def test_the_harness_runs_the_engine_without_strata(spark, tmp_path):
     assert by["engine"]["status"] == "ok" and by["engine"]["fit"]["extras"]["layout"] == "time grid"
     comparison = compare_records(records, reference="lab_numpy")
     assert len(comparison) == 1 and comparison[0]["coefficients_over_T_COEF"] <= 1 and comparison[0]["like_for_like"]
+    extras = by["engine"]["fit"]["extras"]
+    assert extras["partitions"] == 1 and len(extras["evaluation_seconds"]) == extras["evaluations"]
+    # a plan can set the partitions of the fit without strata, or ask for the input's own (the layout before round 12)
+    plan["options"] = {"engine_partitions": 3}
+    again = [r for r in run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "more")) if r["adapter"]["name"] == "engine"]
+    assert again[0]["status"] == "ok" and again[0]["fit"]["extras"]["partitions"] == 3

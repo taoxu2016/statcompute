@@ -3,16 +3,18 @@ Hessian). It stops on a measure that does not depend on the path taken: the larg
 the next Newton step, in standard errors (tolerance class T_CONV of the roadmap, F-10)."""
 from __future__ import annotations
 
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 import numpy as np
 
 Evaluate = Callable[[np.ndarray], Tuple[float, np.ndarray, np.ndarray]]
 
 
-def maximize(evaluate: Evaluate, p: int, tol: float = 1e-8, max_iter: int = 50) -> Dict[str, object]:
+def maximize(evaluate: Evaluate, p: int, tol: float = 1e-8, max_iter: int = 50,
+             start: Optional[Tuple[float, np.ndarray, np.ndarray]] = None) -> Dict[str, object]:
+    """`start`: the evaluation at zero when the caller has computed it already; it counts as one."""
     beta = np.zeros(p)
-    value, gradient, information = evaluate(beta)
+    value, gradient, information = evaluate(beta) if start is None else start
     evaluations, iterations, converged = 1, 0, False
     while True:
         covariance = np.linalg.inv(information)
