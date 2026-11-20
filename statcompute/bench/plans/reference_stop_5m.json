@@ -1,0 +1,14 @@
+{
+ "name": "reference_stop_5m",
+ "description": "pprof_py alone on the two Cox datasets of 5 million rows, without strata: how many calls its Newton loop makes to its own likelihood, and so how many steps it halved (OPEN_ITEMS OI-24). One machine: no executors are asked for. At 100 features the fit needs about 18 GB on the driver.",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": null, "convergence": "default"}]
+ },
+ "adapters": ["pprof_py"],
+ "repeats": 2,
+ "options": {"driver_memory_fraction": 0.4, "clear_cache": true, "cache_input": false}
+}

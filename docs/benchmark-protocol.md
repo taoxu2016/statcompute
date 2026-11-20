@@ -70,6 +70,7 @@ provider.
 | Driver peak memory and CPU | Sampling the driver process, alone and with its children (an Rscript run; the JVM of a local session) | For single-machine implementations this is the whole cost; pprof (R) also reports R's own peak |
 | Executor peak heap | REST API | Peak since the executor started, not per run (OI-10) |
 | Iterations, convergence | The implementation's own report | Reported, never compared |
+| Likelihood calls of pprof_py's Cox fit | A wrapper around the package's own likelihood function while the fit runs (from version 0.14.0); the package is not changed | Iterations + 2 when no step is halved; each call beyond that is a halved step, which can leave the estimate short of the root (`docs/spec/engine.md`, section 5.3) |
 | Recovery of the truth | z = (estimate - generating coefficient) / standard error; largest absolute z | Above 4.5 deserves a look |
 
 ## 5. Comparisons
@@ -126,6 +127,7 @@ single-machine fit leaves the executors idle, and an autoscaling cluster shrinks
 | `standard` | 5, 20, 50 and 100 million rows, 8,000 providers, 180 features; the correlated design at 5 and 20 million | The scale test |
 | `compare_5m` | 5 million rows, 8,000 providers, 50 and 100 features; Cox with strata and the logistic model; every implementation; two repeats | The maintainer's comparison on the standard cluster |
 | `unstratified_5m` | The two Cox datasets of `compare_5m`, without strata; the engine, pprof_spark and pprof_py | The fit without strata on the cluster |
+| `reference_stop_5m` | pprof_py alone on the two Cox datasets of `unstratified_5m`, two repeats | How many steps its Newton loop halved (OI-24). Needs no executors; about 18 GB on the driver at 100 features |
 | `compare_5m_warm` | `compare_5m` for the Spark implementations only, four repeats, with `warm_input` | Timings clear of an executor's first read of a file (D-18) |
 | `unstratified_5m_warm`, `unstratified_5m_warm_input` | `unstratified_5m` for the engine only, four repeats, with `warm_input`; the second leaves the rows in the input's partitions | The two layouts without strata side by side (D-10) |
 

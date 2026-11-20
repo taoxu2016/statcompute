@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ..validation import compare_records, flags_across_records
-from .results import medians, summary, to_markdown, where_time_went
+from .results import halved_steps, medians, summary, to_markdown, where_time_went
 
 TIMING = ["model", "rows", "features", "design", "adapter", "role", "version", "status", "compare_s", "wall_s", "fit_s", "iterations",
           "executors", "tasks", "effective_cores", "share_of_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
@@ -50,6 +50,14 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
              "compared; a row shows, for one adapter and version, the run furthest from the reference. "
              "Iterations are listed as [adapter, reference] and are not a criterion.\n",
              to_markdown(compare_records(records, reference), AGREEMENT)]
+    halved = halved_steps(records)
+    if halved:
+        parts += ["## Halved steps in the reference's Newton loop\n",
+                  "pprof_py's Cox fit, watched from outside: a fit of n iterations calls its likelihood n + 2 times when no "
+                  "step is halved (the start, each iteration, the null model), and once more for every halved step. A step "
+                  "halved at the last iteration leaves the estimate short of the root by 1 - 2^-h of that step, h being the "
+                  "number of halvings, with `converged` true (`docs/spec/engine.md`, section 5.3).\n",
+                  to_markdown(halved)]
     flags = flags_across_records(records)
     if flags:
         parts += ["## Provider flags across runs\n",

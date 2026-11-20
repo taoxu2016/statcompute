@@ -34,6 +34,40 @@ def test_cox_unstratified(spark, data_root):
               ["lab_numpy"])
 
 
+@pytest.mark.parametrize("strata", ["provider", None])
+def test_pprof_pys_cox_fit_reports_how_often_it_called_its_likelihood(spark, data_root, strata):
+    """Round 16: a step that pprof_py halves at its last iteration leaves its estimate short of the root without
+    a sign in the result. The calls it makes to its own likelihood show it: iterations + 2 when none is halved."""
+    import pprof_py.models.survival.coxph as module
+
+    from statcompute.bench.report import render
+    from statcompute.bench.results import halved_steps
+    from statcompute.references.pprof_py_adapter import counted
+
+    original = module.cox_partial_likelihood
+    dataset = materialize(spark, DatasetSpec("cox", 6000, 20, 5), data_root)
+    model = ModelSpec("cox", strata=strata, convergence="tight")
+    fit = asdict(adapters.get("pprof_py").fit(spark, dataset, model))
+    extras = fit["extras"]
+    assert module.cox_partial_likelihood is original                       # the package is as it was
+    assert extras["halved_steps"] >= 0 and extras["likelihood_calls"] == fit["iterations"] + 2 + extras["halved_steps"]
+    record = {"status": "ok", "plan": "p", "dataset": {"id": dataset.id, "spec": dataset.spec.to_dict()}, "model": {"label": model.label()},
+              "adapter": {"name": "pprof_py", "role": "reference", "kind": "driver"}, "support": {"status": "exact", "notes": []},
+              "fit": fit}
+    rows = halved_steps([record, dict(record), dict(record, status="failed")])
+    assert rows == [{"dataset": dataset.id, "model": model.label(), "adapter": "pprof_py", "runs": 2, "iterations": fit["iterations"],
+                     "converged": True, "likelihood_calls": extras["likelihood_calls"], "halved_steps": extras["halved_steps"]}]
+    assert "## Halved steps in the reference's Newton loop" in render([record])
+    # the wrapper comes off when the block raises, and a function that is not there is no error
+    with pytest.raises(RuntimeError):
+        with counted("pprof_py.models.survival.coxph", "cox_partial_likelihood") as calls:
+            assert calls == [] and module.cox_partial_likelihood is not original
+            raise RuntimeError("inside")
+    assert module.cox_partial_likelihood is original
+    with counted("pprof_py.models.survival.coxph", "no_such_function") as calls:
+        assert calls is None
+
+
 @pytest.mark.parametrize("design", ["simple", "correlated"])
 def test_logistic_fixed_effects(spark, data_root, design):
     agreement(spark, data_root, DatasetSpec("logistic_fe", 8000, 20, 5, design=design),

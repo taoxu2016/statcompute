@@ -215,7 +215,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 117 tests. In the sandbox of 2026-11-20 (no R installed) 114 pass and the 3
+The repository has 119 tests. In the sandbox of 2026-11-20 (no R installed) 116 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5
@@ -291,7 +291,11 @@ The programs are probes A-8 and A-9 in `statcompute/lab/probes/`; their output i
 
 The six halvings on the cluster are an inference from those two numbers. pprof_py could not be run
 at that size in the sandbox, and its rounding depends on the cluster's processor and BLAS; counting
-its likelihood calls there would settle it (OI-24). At 50 features the third step was taken whole:
+its likelihood calls there would settle it (OI-24). From version 0.14.0 of the repository the
+harness counts them in every Cox fit of pprof_py, and the report shows the steps halved. Run
+through the harness in the sandbox, the dataset of seed 10 gives 19 calls and 14 halved steps
+beside a difference of 3.49e-5 standard errors from the engine, at both tolerances, and the dataset
+of seed 79 gives 5 calls, none halved, and 6e-12. At 50 features the third step was taken whole:
 2.5e-9 is not a fraction 1 - 2^-h of 1.263e-4.
 
 What follows for comparisons: pprof_py's tightest tolerance does not prevent this, so decision D-06

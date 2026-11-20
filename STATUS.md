@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-20, version 0.13.0 (round 15: the stalls on the cluster located from the report of round 14, and an
-option that reads the stored table before a timed fit).
+Updated 2026-11-20, version 0.14.0 (round 16: the harness counts the likelihood calls of pprof_py's Cox fits, so that
+a halved step shows in the report).
 
 ## What exists
 
@@ -24,7 +24,7 @@ All of the above ran in one sandbox: Python 3.12, PySpark 4.0.1 in local mode, R
 pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned commits. 26 tests
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
-since round 14 and 117 since round 15, of which 114 pass and the 3 that need R are skipped, in about five minutes.
+since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
 
 ## First cluster run, 2026-11-16
 
@@ -167,6 +167,19 @@ Round 15 changes the harness only:
 | The report | Every later evaluation's seconds instead of their median, which hid one slow evaluation; how much the slowest task read; whether the input was read first |
 | Plans for the next runs | `compare_5m_warm`, `unstratified_5m_warm` and `unstratified_5m_warm_input`: the Spark implementations only, four repeats, with `warm_input`; the last with the rows left in the input's partitions |
 
+## Round 16 (2026-11-20): the reference's halved steps, counted by the harness
+
+The question left from round 12: was the difference of 4.34e-5 standard errors from pprof_py at 100 features without
+strata a last Newton step halved six times, as the regenerated data say it should be (OI-24)? Instead of a separate
+script the harness now answers it. The pprof_py adapter counts the calls a Cox fit makes to the package's own
+likelihood, by a wrapper around that function while the fit runs; the package is not changed. A fit of n iterations
+makes n + 2 calls when no step is halved, and one more per halved step. The report has a section for it, and plan
+`reference_stop_5m` runs pprof_py alone on the two datasets.
+
+Checked in the sandbox through the harness, on the two datasets of probe A-8 (100,000 rows by 100 features): seed 10
+gives 19 calls and 14 halved steps, beside a difference of 3.49e-5 standard errors from the engine at both
+tolerances; seed 79 gives 5 calls, none halved, and 6e-12.
+
 ## What has not happened
 
 - No fit of version 0.11.0 or later on Databricks: 0.8.0, 0.9.0 and 0.10.0 have run there. The report of 0.12.0 has.
@@ -184,7 +197,9 @@ The maintainer's direction of 2026-11-16: work within autoscaling, no larger siz
 2. Run `compare_5m_warm`: if the reading of the stalls is right, they are gone from the timed calls, and versions can
    be compared (D-18).
 3. Run `unstratified_5m_warm` and `unstratified_5m_warm_input` one after the other in one session, for D-10 (OI-33).
-4. On the cluster, count pprof_py's likelihood calls in the 100-feature fit without strata (OI-24).
+4. Run `reference_stop_5m`: pprof_py alone on the two Cox datasets without strata. The report then shows how many steps
+   its Newton loop halved: none expected at 50 features, six at 100 (OI-24). The fit at 100 features needs about 18 GB on
+   the driver and died in five of ten earlier attempts on the 32 GB driver; the 128 GB driver avoids that.
 5. Decisions D-08 to D-11 and D-15 to D-18 are proposed and open.
 6. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 

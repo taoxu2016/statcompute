@@ -91,6 +91,26 @@ def medians(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def halved_steps(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Cox fits whose records carry the number of calls the implementation made to its own likelihood
+    (pprof_py's, from version 0.14.0 of this repository): per dataset and model, the runs, the
+    iterations reported, the calls made and the steps halved, each as the values seen over the runs."""
+    def seen(values):
+        distinct = sorted({v for v in values if v is not None})
+        return None if not distinct else (distinct[0] if len(distinct) == 1 else ", ".join(str(v) for v in distinct))
+
+    groups: Dict[Any, List[Dict[str, Any]]] = {}
+    for r in records:
+        fit = r.get("fit") or {}
+        if r.get("status") == "ok" and (fit.get("extras") or {}).get("likelihood_calls") is not None:
+            groups.setdefault((r["dataset"]["id"], r["model"]["label"], r["adapter"]["name"]), []).append(fit)
+    return [{"dataset": dataset, "model": model, "adapter": adapter, "runs": len(fits),
+             "iterations": seen(f.get("iterations") for f in fits), "converged": seen(f.get("converged") for f in fits),
+             "likelihood_calls": seen(f["extras"]["likelihood_calls"] for f in fits),
+             "halved_steps": seen(f["extras"].get("halved_steps") for f in fits)}
+            for (dataset, model, adapter), fits in sorted(groups.items())]
+
+
 def _site(name: str) -> str:
     """A stage's name without the folders of its call site."""
     return re.sub(r"\S*/", "", name or "")[:60]
