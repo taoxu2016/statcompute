@@ -16,6 +16,7 @@ SPARK_KEYS = [
     "spark.driver.maxResultSize", "spark.default.parallelism", "spark.master",
     "spark.memory.offHeap.enabled", "spark.memory.offHeap.size", "spark.sql.files.maxPartitionBytes",
     "spark.databricks.photon.enabled", "spark.locality.wait",
+    "spark.sql.execution.arrow.maxRecordsPerBatch",       # fixes the batches, and so the sums, of an engine fit without strata
 ]
 DATABRICKS_TAGS = {
     "runtime": "spark.databricks.clusterUsageTags.sparkVersion",
@@ -72,6 +73,12 @@ def static(spark) -> Dict[str, Any]:
             info[module] = __import__(module).__version__
         except Exception:
             info[module] = None
+    try:                                              # the BLAS behind NumPy on the driver; the executors' is not recorded yet (OI-29)
+        from threadpoolctl import threadpool_info
+        info["blas"] = [{k: lib.get(k) for k in ("user_api", "internal_api", "version", "threading_layer", "architecture", "num_threads")}
+                        for lib in threadpool_info()]
+    except Exception:
+        info["blas"] = None
     return info
 
 

@@ -1,15 +1,23 @@
 # statcompute
 
-Estimator-preserving computation for classical statistical models. This repository is the
-independent workspace of the project: new algorithms are tried here, the existing implementations
-are benchmarked here on equal terms, and the next Spark implementation of provider profiling will
-be built here.
+Estimator-preserving computation for classical statistical models. This repository is a platform for
+computational research and development: new algorithms are tried, proven and measured here, the
+existing implementations are benchmarked here on equal terms, and what is validated here is meant to
+serve both `pprof_py` and `pprof_spark` (decisions D-12 to D-14).
 
-**Status, version 0.6.0 (2026-11-17).** The engine exists: `CoxPH`, with strata or without, and `LogisticFE`,
-verified against explicit risk sets and against pprof_py in a local Spark 4.0 session, and not yet
-run on a cluster. Around it: the benchmark framework, adapters for the three reference packages,
-and the analysis of the first cluster run in `docs/reports/2026-11-16-databricks-compare-5m.md`.
-`STATUS.md` has the details.
+| Package | Role |
+|---|---|
+| `pprof_py` | The statistical specification: estimators, the provider-profiling layer, the fixtures. Not unquestionable computational ground truth: its results are validated here independently, and issues are kept in `docs/reference-issues.md` until reported |
+| `statcompute` | Algorithms and evidence: probes, an engine that runs the algorithms at scale, the benchmark, and the record of what was tried |
+| `pprof_spark` | The Spark-native implementation in Scala, bitwise equal across partitionings; a receiver of validated algorithms |
+
+Algorithms flow from here to both packages; validation and benchmark evidence flow back.
+
+**Status, version 0.11.0 (2026-11-20).** The engine, `CoxPH` with strata or without and `LogisticFE`, is
+verified against explicit risk sets and against pprof_py in a local Spark 4.0 session; its version
+0.9.0 ran on the cluster on 2026-11-18. Around it: the benchmark framework, adapters for the three
+reference packages, and the analysis of the first cluster run in
+`docs/reports/2026-11-16-databricks-compare-5m.md`. `STATUS.md` has the details.
 
 ## Three rules
 
@@ -24,7 +32,7 @@ and the analysis of the first cluster run in `docs/reports/2026-11-16-databricks
 
 | Area | Where | What it holds |
 |---|---|---|
-| New Spark implementation | `statcompute/engine/` | Cox regression and logistic regression with provider fixed effects on Spark, with NumPy kernels inside partitions. Version 0.1; `docs/spec/engine.md` |
+| New Spark implementation | `statcompute/engine/` | Cox regression and logistic regression with provider fixed effects on Spark, with NumPy kernels inside partitions. `docs/spec/engine.md` |
 | Experimental algorithms and prototypes | `statcompute/lab/` | NumPy kernels, a one-machine prototype and a Spark prototype of the recommended algorithms; the probes behind the research roadmap |
 | Reference implementations and adapters | `statcompute/references/` | One adapter per reference package, and the lock file with their commits |
 | Shared test utilities and synthetic data | `statcompute/testkit/` | Dataset and model specifications, the deterministic generator, tolerance classes |
@@ -54,7 +62,7 @@ CoxPH("time", "event", features, strata="provider", baseline=True).fit(frame).ba
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 111 tests, about four minutes
+pytest -q                                     # 114 tests, about five minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```
@@ -76,6 +84,8 @@ then the `smoke` plan through `01_generate`, `02_run` and `03_report`, then the 
 | `docs/architecture.md` | Structure, dependency rules, how an algorithm moves from probe to engine |
 | `docs/benchmark-protocol.md` | What is measured, under which conditions, and what counts as a fair comparison |
 | `docs/capabilities.md` | What each implementation supports, read from its source at the pinned commit |
+| `docs/reference-issues.md` | Issues found in the packages this project reads, with the evidence and whether each was reported |
+| `docs/spec/` | The engine's specification; the proposal on reproducibility without bitwise identity |
 | `docs/reference-inspection.md` | Baseline functionality and the performance evidence so far |
 | `docs/databricks-runbook.md` | Running the benchmarks on the standard cluster |
 | `docs/research/` | The research roadmap and its evidence |

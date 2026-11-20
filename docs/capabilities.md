@@ -45,7 +45,7 @@ implementations agree for the model that was run.
 `statcompute.engine` is not a reference and is not in the tables above. `docs/spec/engine.md` lists
 what it implements: Cox regression with or without strata, Breslow or Efron ties, entry times,
 weights and offsets; logistic regression with provider fixed effects and providers at the bound.
-It has none of the outputs beyond the fit yet.
+The same document lists its outputs beyond the fit.
 
 ## Consequences for the benchmarks
 

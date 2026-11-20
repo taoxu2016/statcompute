@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-19, version 0.10.0 (round 12: the working set is sorted once and built by the first pass over it,
-one job fewer per fit, and fits without strata get partitions of their own).
+Updated 2026-11-20, version 0.11.0 (round 13: the maintainer's decisions on what this repository is for, and a
+proposal for what stands in place of bitwise reproducibility).
 
 ## What exists
 
@@ -23,8 +23,8 @@ one job fewer per fit, and fits without strata get partitions of their own).
 All of the above ran in one sandbox: Python 3.12, PySpark 4.0.1 in local mode, R 4.3.3, one core;
 pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned commits. 26 tests
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
-Round 12 ran in another sandbox of the same kind without R, with 4 GB of memory: 111 tests, of which 108 pass and the 3 that
-need R are skipped, in about four minutes.
+Rounds 12 and 13 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, of which
+111 pass and the 3 that need R are skipped, in about five minutes.
 
 ## First cluster run, 2026-11-16
 
@@ -91,6 +91,34 @@ partitions cannot run side by side. What the changes do to preparation and to th
 there. Two other layouts of the working set were tried and dropped because they moved the rows to Python no faster
 here: one flat column per feature, and one packed block per partition.
 
+## Round 13, 2026-11-20: what the repository is for
+
+Written while round 12 was running on the cluster, without its result. Nothing in this round touches the engine's
+passes.
+
+The maintainer's decisions of 2026-11-20:
+
+- **D-12.** pprof_py remains the statistical specification, but not unquestionable computational ground truth.
+  statcompute validates independently and reports potential issues; changes of methodology are reviewed explicitly.
+- **D-13.** Algorithms flow from statcompute to both pprof_py and pprof_spark; validation and benchmark evidence flow
+  back. statcompute is to be a reusable platform for computational research and development.
+- **D-14.** Bitwise reproducibility is not an absolute requirement: strict numerical tolerances, stable
+  provider-level flags and auditable execution configurations may be sufficient.
+
+What follows from them in this round:
+
+| Part | State |
+|---|---|
+| Roles of the packages, and a last stage "handed over" for an algorithm | `docs/architecture.md`; the stage is proposed (D-17), with nothing handed over yet |
+| Register of issues found in the packages this project reads | `docs/reference-issues.md`: eight entries, none reported yet. Four rest on the comparison of 2026-11-17, whose probes are not in this repository |
+| Stable provider-level flags | Proposed as D-15, in `docs/spec/reproducibility.md`. `statcompute.validation.flags` compares two provider tables by the rule; the engine's logistic records carry a flag summary and the report says whether every run flagged the same providers. Nothing passes or fails by it |
+| Auditable execution configuration | Proposed as D-16, same document. The harness now also records the Arrow batch size and the driver's BLAS. Missing: the libraries on the executors, and a record on fits made outside the harness (OI-29) |
+
+Measured in the sandbox (probe A-10, `docs/research/flag-margins.md`; logistic model, 800,000 rows, 4,000 providers,
+10 features): the provider test statistics differ by 5e-15 between two layouts of the engine, by 6e-13 between the
+engine and pprof_py at its tightest tolerance, and by 9e-9 between pprof_py at 1e-5 and at 1e-12. No flag differs.
+The provider nearest a cut-off is 1.5e-4 away for a z statistic and 3.7e-5 for the exact p-value.
+
 ## What has not happened
 
 - No run of this version of the engine on Databricks; version 0.9.0 ran on 2026-11-18.
@@ -108,7 +136,8 @@ The maintainer's direction of 2026-11-16: work within autoscaling, no larger siz
    A third run of `unstratified_5m` with `"engine_partitions": "input"` in its options shows what the new layout
    without strata buys or costs.
 2. On the cluster, count pprof_py's likelihood calls in the 100-feature fit without strata (OI-24).
-3. Decisions D-08 to D-11 are proposed and open.
+3. Decisions D-08 to D-11 and D-15 to D-17 are proposed and open. With this round applied, the logistic records of the
+   rerun also say whether every run flagged the same providers.
 4. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is

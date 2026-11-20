@@ -39,6 +39,10 @@ class Engine(Adapter):
             fitted = LogisticFE("y", names, "provider", **options).fit(frame)
             extras = {"providers": fitted.providers, "bounded_low": fitted.bounded_low,
                       "bounded_high": fitted.bounded_high, "median_gamma": fitted.median_gamma}
+            if fitted.provider_effects is not None:       # which providers are flagged, as counts and a digest (D-15)
+                from ..validation.flags import flag_summary
+
+                extras["flags"] = flag_summary(fitted.provider_effects, key="provider", level=0.95)
         extras.update(evaluations=fitted.evaluations, newton_step_in_se=fitted.newton_step_in_se,
                       partitions=fitted.partitions, events=fitted.events,
                       evaluation_seconds=[round(s, 3) for s in fitted.evaluation_seconds])

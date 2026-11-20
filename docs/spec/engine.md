@@ -179,7 +179,9 @@ providers.
   added on the driver; NumPy and its BLAS. The layout does not depend on the number of executors,
   so neither should the bits; that has been tested in local mode only. Without `row_id`, with
   `partitions="input"`, across layouts or across BLAS builds, results agree to rounding (1e-9
-  standard errors, tested), not bit for bit. This is weaker than pprof_spark's guarantee.
+  standard errors, tested), not bit for bit. This is weaker than pprof_spark's guarantee. By
+  decision D-14 bitwise identity is not an absolute requirement; `docs/spec/reproducibility.md`
+  proposes what stands in its place.
 - **Refusals.** Rows are refused by name and count, as a `ValueError`: by the light job for a missing
   time, event, stratum, weight or offset, an event that is not 0 or 1, an entry time not before the
   exit; by the pass that builds the working set for a missing feature. A table that gives another
@@ -206,13 +208,14 @@ providers.
 | Tables centred after the first pass equal tables accumulated centred | `test_engine_time.py`: both tie methods, with weights, offset and entry | Score and rank-one matrix within 1e-9, cumulative hazard within 1e-12, relative |
 | Missing features are refused by the pass that builds the working set | Both files: Cox with and without strata, logistic; null and NaN | The same message and count as before |
 | Tables too large for the driver are added on the executors | `test_engine_time.py`, with the limit set to zero | Within 1e-9 standard errors |
+| Provider flags do not depend on the layout, and equal pprof_py's | `test_validation_flags.py`: two layouts; pprof_py at its tightest tolerance | No flag differs; statistics within 1e-9 between layouts, and within 1e-9 (score), 1e-7 (Wald) and 1e-12 (exact) of pprof_py's |
 
 | The baseline hazard equals pprof_py's | `test_engine_outputs.py`: both tie methods, with strata and without, with weights | Same rows; hazard within 1e-8 relative (measured: 8e-10 with strata, 5e-14 without) |
 | Standardized ratios and the score and Wald tests equal pprof_py's | Same file, with one provider at the bound | Ratios, rates and expected counts within 1e-9; score statistics within 1e-9; Wald within 1e-7; identical flags |
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 111 tests. In the sandbox of 2026-11-19 (no R installed) 108 pass and the 3
+The repository has 114 tests. In the sandbox of 2026-11-20 (no R installed) 111 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5

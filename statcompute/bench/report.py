@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..validation import compare_records
+from ..validation import compare_records, flags_across_records
 from .results import summary, to_markdown
 
 TIMING = ["model", "rows", "features", "design", "adapter", "role", "status", "compare_s", "wall_s", "fit_s", "iterations",
@@ -36,6 +36,14 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. "
              "Iterations are listed as [adapter, reference] and are not a criterion.\n",
              to_markdown(compare_records(records, reference), AGREEMENT)]
+    flags = flags_across_records(records)
+    if flags:
+        parts += ["## Provider flags across runs\n",
+                  "For each test: how many providers the first run flagged, whether every run flagged the same providers "
+                  "the same way, and the smallest distance of a provider's statistic from the cut-off in any run "
+                  "(|z| from the normal quantile; the exact p-value from 1 - level). A flag can change only for a provider "
+                  "closer to the cut-off than the computations are to each other.\n",
+                  to_markdown(flags)]
     notes = sorted({(r["adapter"]["name"], r["model"]["label"], note) for r in records
                     for note in ((r.get("support") or {}).get("notes") or [])})
     if notes:

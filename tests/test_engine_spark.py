@@ -131,3 +131,10 @@ def test_the_engine_runs_in_the_harness(spark, tmp_path):
     assert [r["status"] for r in records if r["adapter"]["name"] == "lab_numpy"] == ["unsupported", "ok"]   # the prototype has no Efron
     comparison = compare_records(records, reference="lab_numpy")
     assert len(comparison) == 1 and comparison[0]["coefficients_over_T_COEF"] <= 1
+    # the logistic record says which providers were flagged, as counts and a digest, and the report compares runs by it
+    from statcompute.bench.report import render
+
+    flags = engine[1]["fit"]["extras"]["flags"]
+    assert set(flags) == {"score", "wald", "exact"} and len(flags["score"]["digest"]) == 16 and "flags" not in engine[0]["fit"]["extras"]
+    assert flags["score"]["above"] + flags["score"]["below"] <= 10 and flags["exact"]["smallest_distance_from_cutoff"] > 0
+    assert "## Provider flags across runs" in render(records, reference="lab_numpy")

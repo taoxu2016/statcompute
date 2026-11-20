@@ -14,10 +14,12 @@ JDK 17 or later for `GramBench.java` (run by the `java` source launcher; no buil
 | A-6 | `iter_logit.py` | Joint Newton by block elimination against profile-likelihood Newton for the logistic model with provider effects |
 | A-7 | `check_cox_centering.py` | Cancellation in the Cox information when stratum means are spread, with overall and per-stratum centring |
 | A-8 | `check_reference_stop.py` | Can pprof_py's Cox estimate stop short of the root whatever its tolerance? Its likelihood calls are counted from outside and its own kernel is asked for the step that remains. Arguments: rows, features, data folder, seeds |
+| A-10 | `check_flag_margins.py` | What does "stable provider-level flags" need? Differences in the provider test statistics between layouts, implementations and tolerances, against the distance of providers from the cut-offs. Arguments: rows, providers, features, data folder |
 | A-9 | `newton_steps_exact.py` | The Newton steps of a fit without strata on a regenerated benchmark dataset, the score recomputed in 80-bit arithmetic, and what a last step cut short would leave. Arguments: rows, providers, features, work folder, and optionally a reported difference (absolute, in standard errors) |
 
 Notes: `iter_cox2.py` and `iter_cox3.py` reuse definitions from `iter_cox.py` and must run from this directory.
-A-8 and A-9 (round 12) are not part of `run_all.sh`: they need this repository on the Python path and PySpark, A-8
-also pprof_py with numba, and they take minutes. Their output is in `docs/research/reference-stopping-rule.md`.
+A-8 to A-10 (rounds 12 and 13) are not part of `run_all.sh`: they need this repository on the Python path and PySpark,
+A-8 and A-10 also pprof_py with numba, and they take minutes. Their output is in
+`docs/research/reference-stopping-rule.md` and `docs/research/flag-margins.md`.
 `check_cox_centering.py` imports from `check_cox_gram.py`. The timings in A-2 and A-4 vary from run to run; every
 other figure is fixed by the seeds.
