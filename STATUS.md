@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-20, version 0.12.0 (round 14: round 12's runs on the cluster read, and a report that reads a results
-folder version by version and says where a run's time went).
+Updated 2026-11-20, version 0.13.0 (round 15: the stalls on the cluster located from the report of round 14, and an
+option that reads the stored table before a timed fit).
 
 ## What exists
 
@@ -23,8 +23,8 @@ folder version by version and says where a run's time went).
 All of the above ran in one sandbox: Python 3.12, PySpark 4.0.1 in local mode, R 4.3.3, one core;
 pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned commits. 26 tests
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
-Rounds 12 to 14 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13 and 115
-since round 14, of which 112 pass and the 3 that need R are skipped, in about five minutes.
+Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
+since round 14 and 117 since round 15, of which 114 pass and the 3 that need R are skipped, in about five minutes.
 
 ## First cluster run, 2026-11-16
 
@@ -143,10 +143,33 @@ Round 14 changes the harness, not the engine:
 | Agreement of every run | One row per adapter and version, with the number of runs and the run furthest from the reference; before, only an adapter's first run was compared |
 | The slowest task, recorded | From 0.12.0: its executor, how long that executor had been attached, the task's duration, garbage collection, wait for shuffle data and locality. By both routes to Spark's metrics; tried in local mode only |
 
+## The second reading, and round 15 (2026-11-20)
+
+The maintainer rendered the two results folders again with the report of round 14. Section 5 of
+`docs/reports/2026-11-20-databricks-round-12.md` has the reading. In short:
+
+- **Round 12's estimates agree with pprof_py on the cluster** exactly as those of 0.8.0 did: 8.0e-13 and 7.3e-13
+  standard errors for Cox with strata at 50 and 100 features, 1.9e-10 for the logistic model. Without strata the known
+  2.5e-9 and 4.3e-5, which are pprof_py's stopping rule.
+- **The stall is located.** In all six stalled calls of round 12 the slowest task of the run is in the light job, the
+  first job that reads the stored table: one task of 17 to 21 seconds in a stage whose median task takes 0.1 to 0.4.
+  Earlier versions, `lab_spark` and pprof_spark have the same task wherever they first read the table. It is a property
+  of the cluster and the stored table, not of a version (OI-31). The earlier labels were wrong in one respect: the runs
+  called 0.9.0 were of 0.8.0 with strata, and of 0.8.0 and 0.9.0 without.
+- **Net of the stalls round 12 is not faster.** Later evaluations take what evaluations took before. Without strata
+  the new layout used more cores for the same seconds (OI-33).
+
+Round 15 changes the harness only:
+
+| Part | State |
+|---|---|
+| A read of the stored table before every timed Spark fit | Plan option `warm_input`: `"all"` or `"footers"`. Off unless a plan sets it; the record keeps the mode and the seconds. Proposed as D-18; untried on a cluster |
+| The report | Every later evaluation's seconds instead of their median, which hid one slow evaluation; how much the slowest task read; whether the input was read first |
+| Plans for the next runs | `compare_5m_warm`, `unstratified_5m_warm` and `unstratified_5m_warm_input`: the Spark implementations only, four repeats, with `warm_input`; the last with the rows left in the input's partitions |
+
 ## What has not happened
 
-- No comparison of an estimate of version 0.10.0 or later with pprof_py on Databricks: 0.9.0 and 0.10.0 have run there,
-  and the report compared a run of 0.9.0. Versions 0.11.0 and 0.12.0 have not run there.
+- No fit of version 0.11.0 or later on Databricks: 0.8.0, 0.9.0 and 0.10.0 have run there. The report of 0.12.0 has.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -156,13 +179,14 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. With round 14 applied, run notebook `03_report` again on the two results folders, without any new fit: the report
-   then compares round 12's estimates with pprof_py and shows where each of its calls spent the time (OI-31).
-2. Then run the two plans again: records made with 0.12.0 say which executor ran the slowest task and what that task's
-   time was made of. More than two repeats would help (OI-32).
-3. On the cluster, count pprof_py's likelihood calls in the 100-feature fit without strata (OI-24).
-4. Decisions D-08 to D-11 and D-15 to D-17 are proposed and open.
-5. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+1. Run `compare_5m` and `unstratified_5m` once with version 0.13.0: the records then name the executor of each run's
+   slowest task, how long it had been attached and how much it read (OI-31).
+2. Run `compare_5m_warm`: if the reading of the stalls is right, they are gone from the timed calls, and versions can
+   be compared (D-18).
+3. Run `unstratified_5m_warm` and `unstratified_5m_warm_input` one after the other in one session, for D-10 (OI-33).
+4. On the cluster, count pprof_py's likelihood calls in the 100-feature fit without strata (OI-24).
+5. Decisions D-08 to D-11 and D-15 to D-18 are proposed and open.
+6. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

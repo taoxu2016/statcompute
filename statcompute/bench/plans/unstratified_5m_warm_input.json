@@ -1,0 +1,14 @@
+{
+ "name": "unstratified_5m_warm_input",
+ "description": "As unstratified_5m_warm, with the engine's rows left in the input's own partitions: the layout before round 12, to set beside the other in the same session (decision D-10).",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": null, "convergence": "default"}]
+ },
+ "adapters": ["engine"],
+ "repeats": 4,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "engine_partitions": "input"}
+}

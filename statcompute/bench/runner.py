@@ -72,6 +72,7 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
                                                        "checksum": dataset.manifest.get("checksum")},
         "model": dict(model.to_dict(), label=model.label()),
         "support": None, "status": None, "error": None, "caveats": [], "memory_guard": None, "warmup": None,
+        "warm_input": None,
         "environment": None, "timing": None, "spark": None, "process": None, "fit": None, "truth": None,
     }
 
@@ -113,6 +114,12 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         # an autoscaling cluster: ask for its full size before the clock starts
         record["warmup"] = environment.hold_at(spark, int(options["hold_executors"]),
                                                float(options.get("hold_timeout_s", 900)))
+    if options.get("warm_input") and adapter.kind == "spark":
+        # every executor reads the stored table once before the clock starts (OI-31); off unless the plan asks
+        try:
+            record["warm_input"] = environment.warm_input(spark, dataset, str(options["warm_input"]))
+        except Exception as failure:
+            record["warm_input"] = {"mode": str(options["warm_input"]), "error": f"{type(failure).__name__}: {failure}"[:300]}
     if adapter.kind == "spark":
         try:
             record["dataset"]["input_partitions"] = int(dataset.frame(spark).rdd.getNumPartitions())

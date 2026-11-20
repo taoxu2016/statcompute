@@ -215,7 +215,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 115 tests. In the sandbox of 2026-11-20 (no R installed) 112 pass and the 3
+The repository has 117 tests. In the sandbox of 2026-11-20 (no R installed) 114 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5
@@ -260,8 +260,12 @@ configuration; `docs/reports/2026-11-20-databricks-round-12.md` has the analysis
 with strata or providers ran 101 tasks fewer, as intended; without strata the fits used 14 to 18
 effective cores instead of 7 to 12; and no call was shown to be faster. Six of the eight calls with
 strata or providers spent 33 to 64 seconds outside the fit phase, as three of twenty-two had
-before, and what such a stall is has not been established. No estimate of this version has been
-compared with pprof_py on the cluster yet: the report compared an earlier run.
+before. The report of round 14 on the same records located the stall: one task of 17 to 21 seconds
+in the first job that reads the stored table, which in this version is the light job; earlier
+versions and the other implementations have the same task in their first read. It is a property of
+the cluster and the stored table, not of a version. The same report compared every run: the
+estimates of this version are 8.0e-13 and 7.3e-13 standard errors from pprof_py's for Cox with
+strata at 50 and 100 features and 1.9e-10 for the logistic model, the same numbers as version 0.8.0.
 
 ### 5.3 The reference's stopping rule
 

@@ -1,0 +1,14 @@
+{
+ "name": "unstratified_5m_warm",
+ "description": "unstratified_5m for the engine only, four repeats, with the stored table read once before every timed fit (warm_input, decision D-18). The engine's layout of round 12: rows placed by row identifier.",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": null, "convergence": "default"}]
+ },
+ "adapters": ["engine"],
+ "repeats": 4,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all"}
+}

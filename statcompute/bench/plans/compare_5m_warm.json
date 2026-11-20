@@ -1,0 +1,17 @@
+{
+ "name": "compare_5m_warm",
+ "description": "compare_5m for the Spark implementations only, four repeats, with the stored table read once before every timed fit (warm_input, decision D-18): timings clear of the first read of a file by an executor.",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": "provider", "convergence": "default"}],
+  "logistic_fe": [{"family": "logistic_fe", "convergence": "default"}]
+ },
+ "adapters": ["engine", "lab_spark", "pprof_spark", "pprof_spark_cached"],
+ "repeats": 4,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all"}
+}

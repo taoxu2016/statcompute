@@ -103,8 +103,9 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     stage's median; the number of tasks says which stage it was (the input's partitions, or the
     working set's). `other_s` is the part of the call outside the reported phases. Records made
     from version 0.12.0 on also say which executor ran that task, how long it had been attached
-    when the task started, and how much of the task was garbage collection or waiting for shuffle
-    data."""
+    when the task started, how much it read from storage, and how much of it was garbage
+    collection or waiting for shuffle data. `input_warmed` says whether the plan had the stored
+    table read once before the timed call."""
     out = []
     for r in records:
         timing, spark = r.get("timing") or {}, r.get("spark") or {}
@@ -118,13 +119,14 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         low, high = during.get("executors_min"), during.get("executors_max")
         seen = [str(c[1]) for c in during.get("changes") or []]
         task = spark.get("slowest_task") or {}
+        warmed = r.get("warm_input") or {}
         row = {"model": r["model"]["label"], "features": r["dataset"]["spec"]["features"], "adapter": r["adapter"]["name"],
                "version": r.get("statcompute"), "wall_s": round(timing["wall_s"], 1),
                "prepare_s": None if "prepare" not in phases else round(phases["prepare"], 1),
                "fit_s": None if "fit" not in phases else round(phases["fit"], 1),
                "other_s": round(timing["wall_s"] - sum(phases.values()), 1) if phases else None,
                "first_evaluation_s": round(seconds[0], 1) if seconds else None,
-               "later_evaluation_s": round(statistics.median(seconds[1:]), 1) if len(seconds) > 1 else None,
+               "later_evaluations_s": " ".join(f"{s:.1f}" for s in seconds[1:]) or None,
                "slowest_task_s": None if slow is None else round(slow["max_task_s"], 1),
                "its_stage": None if slow is None else f"{slow.get('stage')}: {_site(slow.get('name'))}",
                "stage_tasks": None if slow is None else slow.get("tasks"),
@@ -136,8 +138,11 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                "task_fetch_wait_s": None if task.get("fetch_wait_s") is None else round(task["fetch_wait_s"], 1),
                "task_locality": task.get("locality"),
                "spilled_gb": _gb(spark.get("disk_spilled_bytes")),
+               "task_input_gb": _gb(task.get("input_bytes")),
                "executors": low if low == high else f"{low}-{high}",
-               "executors_seen": ">".join(seen[:12]) + ("..." if len(seen) > 12 else "")}
+               "executors_seen": ">".join(seen[:12]) + ("..." if len(seen) > 12 else ""),
+               "input_warmed": None if not warmed else (f"{warmed.get('mode')}: failed" if "error" in warmed
+                                                        else f"{warmed.get('mode')} in {warmed.get('seconds', 0):.0f} s")}
         out.append(row)
     return out
 

@@ -42,7 +42,8 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
              "For the engine's Cox fits from version 0.10.0 on, `prepare_s` contains the first evaluation, which builds the "
              "working set, and `fit_s` is the evaluations after it. The slowest task is the longest single task among the "
              "run's heaviest stages: far above `stage_median_task_s`, it is a stall, and `stage_tasks` says where "
-             "(the input's partitions, or the working set's).\n",
+             "(the input's partitions, or the working set's). A stage is named by the line of the action that ran it, "
+             "in the source of the run's version.\n",
              to_markdown(where_time_went(records)),
              f"## Numerical agreement with {reference}\n",
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. Every run is "

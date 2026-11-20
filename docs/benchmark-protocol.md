@@ -13,6 +13,13 @@ What is run, under which conditions, what is measured, and what may be concluded
 | Reference versions | The commits in `REFERENCES.lock`; a record says whether the session's build matches | `adapter.matches_pin` |
 | Repeats | Two per configuration in the scale plans; the first includes JVM warm-up | Plan |
 
+On the standard cluster the first read of a stored file by an executor stalls one task for 17 to
+21 seconds, in whichever job reads the table first (`docs/reports/2026-11-20-databricks-round-12.md`,
+section 5). A plan may set the option `warm_input` to have the stored table read once before every
+timed Spark fit: `"all"` reads every column, `"footers"` only counts the rows. The record keeps the
+mode and the seconds, and the report shows them. It is off unless a plan sets it, because it
+changes what a timing means: a fit from a table the executors have already read (D-18, proposed).
+
 A run on a cluster that changed size is kept, flagged under `caveats`, and left out of timing
 comparisons. The same list names anything else that would distort a timing: pprof_py running
 without numba, a pprof_spark build other than the pinned commit, pprof_spark's JAR on a Spark line
@@ -117,6 +124,10 @@ single-machine fit leaves the executors idle, and an autoscaling cluster shrinks
 | `parity` | 1 million rows, 8,000 providers, 50 features, both designs, tight tolerances | Numerical agreement at a size every implementation can run |
 | `width` | 5 million rows, 8,000 providers, 50, 100 and 180 features | Cost against width |
 | `standard` | 5, 20, 50 and 100 million rows, 8,000 providers, 180 features; the correlated design at 5 and 20 million | The scale test |
+| `compare_5m` | 5 million rows, 8,000 providers, 50 and 100 features; Cox with strata and the logistic model; every implementation; two repeats | The maintainer's comparison on the standard cluster |
+| `unstratified_5m` | The two Cox datasets of `compare_5m`, without strata; the engine, pprof_spark and pprof_py | The fit without strata on the cluster |
+| `compare_5m_warm` | `compare_5m` for the Spark implementations only, four repeats, with `warm_input` | Timings clear of an executor's first read of a file (D-18) |
+| `unstratified_5m_warm`, `unstratified_5m_warm_input` | `unstratified_5m` for the engine only, four repeats, with `warm_input`; the second leaves the rows in the input's partitions | The two layouts without strata side by side (D-10) |
 
 Single-machine implementations are skipped by the memory guard where they cannot fit. At 180
 features pprof_py is at its ceiling near 5 million rows on a 32 GB driver, and pprof (R), which

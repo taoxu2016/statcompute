@@ -82,6 +82,26 @@ def static(spark) -> Dict[str, Any]:
     return info
 
 
+def warm_input(spark, dataset, mode: str = "all") -> Dict[str, Any]:
+    """Read the stored table once before a timed fit, so that no executor meets one of its files for
+    the first time inside the fit: on the standard cluster such a first read stalls one task for 17
+    to 21 seconds (OPEN_ITEMS.md, OI-31). `mode` "footers" counts the rows, which opens every file;
+    "all" reads every column of every row. Returns the mode, the seconds it took and the rows seen.
+
+    This changes what a timing means. The fit is then measured from a table the executors have
+    already read, as a job on a long-running cluster would find it, and no longer from a cold one."""
+    from pyspark.sql import functions as F
+
+    mode = "footers" if str(mode) == "footers" else "all"
+    started = time.perf_counter()
+    frame = dataset.frame(spark)
+    if mode == "footers":
+        rows = frame.count()
+    else:
+        rows = frame.select(F.xxhash64(*frame.columns).alias("h")).agg(F.count("*").alias("n"), F.max("h")).first()["n"]
+    return {"mode": mode, "seconds": time.perf_counter() - started, "rows": int(rows)}
+
+
 def moving(spark) -> Dict[str, Any]:
     """What can change under a run: executors, cores and the default parallelism."""
     out = executors(spark)

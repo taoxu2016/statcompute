@@ -89,7 +89,8 @@ def test_a_report_reads_a_folder_of_several_rounds_round_by_round():
         a_record("engine", "0.10.0", 16.0, {"prepare": 7.0, "fit": 9.0}, [1.0, 2.001], seconds=[5.0, 3.0, 3.0, 3.0]),
     ]
     records[2]["spark"]["slowest_task"] = {"stage": 3, "executor": "7", "executor_attached_s_before": 3.21, "gc_s": 1.5,
-                                           "fetch_wait_s": 0.0, "locality": "ANY"}
+                                           "fetch_wait_s": 0.0, "locality": "ANY", "input_bytes": 20_000_000}
+    records[3]["warm_input"] = {"mode": "all", "seconds": 7.2, "rows": 100}
     by = {(c["adapter"], c["version"]): c for c in compare_records(records, reference="pprof_py")}
     assert set(by) == {("engine", "0.9.0"), ("engine", "0.10.0")}
     assert by[("engine", "0.9.0")]["runs"] == 1 and by[("engine", "0.9.0")]["max_abs_coefficient_difference"] == 0
@@ -103,13 +104,42 @@ def test_a_report_reads_a_folder_of_several_rounds_round_by_round():
     assert [w["version"] for w in went] == ["0.9.0", "0.10.0", "0.10.0"]               # Spark implementations only
     slow = went[1]
     assert slow["prepare_s"] == 50.0 and slow["fit_s"] == 9.0 and slow["other_s"] == 1.0
-    assert slow["first_evaluation_s"] == 48.0 and slow["later_evaluation_s"] == 3.0
+    assert slow["first_evaluation_s"] == 48.0 and slow["later_evaluations_s"] == "3.1 2.9 3.0"
+    assert slow["input_warmed"] is None and went[2]["input_warmed"] == "all in 7 s" and slow["task_input_gb"] == 0.02
     assert slow["slowest_task_s"] == 45.0 and slow["its_stage"] == "3: collect at spark.py:10" and slow["stage_tasks"] == 17
     assert slow["stage_median_task_s"] == 0.5 and slow["executors"] == 2 and slow["executors_seen"] == "9>10"
     assert slow["on_executor"] == "7" and slow["executor_attached_s_before"] == 3.2 and slow["task_gc_s"] == 1.5
     assert went[0]["slowest_task_s"] is None and went[0]["first_evaluation_s"] is None and went[0]["on_executor"] is None
     text = render(records, reference="pprof_py")
     assert "## Medians by version" in text and "## Where the time went" in text and "| 0.10.0 | 2 |" in text
+
+
+def test_a_plan_can_have_the_stored_table_read_once_before_every_timed_spark_fit(spark, tmp_path):
+    """Round 15: an executor's first read of a stored file stalled the fits on the cluster (OI-31)."""
+    for mode in ("all", "footers"):
+        plan = dict(PLAN, adapters=["lab_spark", "lab_numpy"], options={"warm_input": mode})
+        records = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / mode))
+        by = {r["adapter"]["name"]: r for r in records}
+        assert by["lab_spark"]["status"] == "ok" and by["lab_spark"]["warm_input"]["mode"] == mode
+        assert by["lab_spark"]["warm_input"]["rows"] == by["lab_spark"]["dataset"]["rows"] and by["lab_spark"]["warm_input"]["seconds"] > 0
+        assert by["lab_numpy"]["warm_input"] is None                      # a single-machine fit reads nothing through Spark
+    assert run_plan(spark, dict(PLAN, adapters=["lab_spark"]), str(tmp_path / "data"), str(tmp_path / "plain"))[0]["warm_input"] is None
+
+
+def test_every_plan_in_the_repository_loads_under_its_own_name():
+    import glob
+    import os
+
+    from statcompute.bench.runner import PLANS, load_plan
+
+    files = sorted(glob.glob(os.path.join(PLANS, "*.json")))
+    assert len(files) >= 10
+    for path in files:
+        plan = load_plan(path)
+        assert plan["name"] == os.path.basename(path)[:-5] and plan["datasets"] and plan["adapters"]
+        assert all(family in plan["models"] for family in {d["family"] for d in plan["datasets"]})
+    assert load_plan("compare_5m_warm")["options"]["warm_input"] == "all"
+    assert load_plan("unstratified_5m_warm_input")["options"]["engine_partitions"] == "input"
 
 
 def test_the_memory_guard_skips_a_fit_that_would_not_fit_the_driver(spark, tmp_path):
