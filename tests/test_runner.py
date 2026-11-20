@@ -2,6 +2,8 @@
 import sys
 import types
 
+import pytest
+
 from statcompute import adapters
 from statcompute.adapters import Adapter, Support
 from statcompute.bench import run_plan
@@ -47,6 +49,7 @@ def test_a_plan_records_every_outcome(spark, tmp_path):
         assert metrics["jobs"] > 0 and metrics["tasks"] > 0 and metrics["executor_run_s"] > 0
         heaviest = metrics["heaviest_stages"][0]
         assert heaviest["name"] and heaviest["tasks"] >= 1 and heaviest["run_s"] >= 0
+        assert "slowest_task" in metrics and (metrics["slowest_task"] is None or metrics["slowest_task"]["executor"] == "driver")
     loaded = load_records(str(tmp_path / "results"))
     assert len(loaded) == 4 and len(summary(loaded)) == 4
     comparisons = compare_records(loaded, reference="lab_numpy")
@@ -54,6 +57,59 @@ def test_a_plan_records_every_outcome(spark, tmp_path):
     assert comparisons[0]["coefficients_over_T_COEF"] <= 1
     text = render(loaded, reference="lab_numpy")
     assert "lab_spark" in text and "boom" in text
+
+
+def a_record(adapter, version, wall, phases, coefficients, role="engine", kind="spark", caveats=(), seconds=None, stages=None,
+             changes=None):
+    return {"statcompute": version, "plan": "p", "repeat": 0, "status": "ok", "caveats": list(caveats), "error": None,
+            "adapter": {"name": adapter, "role": role, "kind": kind, "version": "0.7.0"},
+            "dataset": {"id": "d", "spec": {"rows": 100, "providers": 4, "features": 2, "design": "simple"}},
+            "model": {"label": "cox/stratified/breslow/default"}, "support": {"status": "exact", "notes": []},
+            "timing": {"wall_s": wall, "phases": phases}, "spark": {"tasks": 10, "heaviest_stages": stages or []},
+            "environment": {"static": {}, "after": {"executors": 2}, "cluster_changed": False,
+                            "during": {"executors_min": 2, "executors_max": 2, "changes": changes or [[0.0, 2, 8]]}},
+            "process": {}, "truth": None,
+            "fit": {"feature_names": ["x1", "x2"], "coefficients": coefficients, "standard_errors": [0.1, 0.1],
+                    "log_likelihood": -10.0, "iterations": 3, "extras": {"evaluation_seconds": seconds} if seconds else {}}}
+
+
+def test_a_report_reads_a_folder_of_several_rounds_round_by_round():
+    """Round 14: a results folder collects runs of several versions; every run is compared, and the time is attributed."""
+    from statcompute.bench.results import medians, where_time_went
+
+    stalled = [{"stage": 3, "name": "collect at /Workspace/x/statcompute/engine/spark.py:10", "tasks": 17, "run_s": 60.0,
+                "median_task_s": 0.5, "max_task_s": 45.0},
+               {"stage": 4, "name": "mapInArrow at spark.py:20", "tasks": 100, "run_s": 40.0, "median_task_s": 0.4, "max_task_s": 2.0},
+               {"stage": 5, "name": "no task summary", "tasks": 1, "run_s": 1.0}]
+    records = [
+        a_record("pprof_py", "0.9.0", 30.0, {"fit": 20.0}, [1.0, 2.0], role="reference", kind="driver"),
+        a_record("engine", "0.9.0", 20.0, {"prepare": 8.0, "fit": 12.0}, [1.0, 2.0]),
+        a_record("engine", "0.10.0", 60.0, {"prepare": 50.0, "fit": 9.0}, [1.0, 2.0], seconds=[48.0, 3.1, 2.9, 3.0], stages=stalled,
+                 changes=[[0.0, 9, 36], [20.0, 10, 40]], caveats=["executors ranged from 9 to 10 during the fit"]),
+        a_record("engine", "0.10.0", 16.0, {"prepare": 7.0, "fit": 9.0}, [1.0, 2.001], seconds=[5.0, 3.0, 3.0, 3.0]),
+    ]
+    records[2]["spark"]["slowest_task"] = {"stage": 3, "executor": "7", "executor_attached_s_before": 3.21, "gc_s": 1.5,
+                                           "fetch_wait_s": 0.0, "locality": "ANY"}
+    by = {(c["adapter"], c["version"]): c for c in compare_records(records, reference="pprof_py")}
+    assert set(by) == {("engine", "0.9.0"), ("engine", "0.10.0")}
+    assert by[("engine", "0.9.0")]["runs"] == 1 and by[("engine", "0.9.0")]["max_abs_coefficient_difference"] == 0
+    newest = by[("engine", "0.10.0")]                    # both runs are compared, and the one furthest from the reference is shown
+    assert newest["runs"] == 2 and newest["max_coefficient_difference_in_se"] == pytest.approx(0.01)
+    middle = {(m["adapter"], m["version"]): m for m in medians(records)}
+    assert middle[("engine", "0.10.0")]["runs"] == 2 and middle[("engine", "0.10.0")]["median_compare_s"] == 38.0
+    assert middle[("engine", "0.10.0")]["runs_without_caveat"] == 1 and middle[("engine", "0.10.0")]["median_compare_s_without_caveat"] == 16.0
+    assert middle[("pprof_py", "0.9.0")]["median_compare_s"] == 20.0                    # a single-machine fit: its fit phase
+    went = where_time_went(records)
+    assert [w["version"] for w in went] == ["0.9.0", "0.10.0", "0.10.0"]               # Spark implementations only
+    slow = went[1]
+    assert slow["prepare_s"] == 50.0 and slow["fit_s"] == 9.0 and slow["other_s"] == 1.0
+    assert slow["first_evaluation_s"] == 48.0 and slow["later_evaluation_s"] == 3.0
+    assert slow["slowest_task_s"] == 45.0 and slow["its_stage"] == "3: collect at spark.py:10" and slow["stage_tasks"] == 17
+    assert slow["stage_median_task_s"] == 0.5 and slow["executors"] == 2 and slow["executors_seen"] == "9>10"
+    assert slow["on_executor"] == "7" and slow["executor_attached_s_before"] == 3.2 and slow["task_gc_s"] == 1.5
+    assert went[0]["slowest_task_s"] is None and went[0]["first_evaluation_s"] is None and went[0]["on_executor"] is None
+    text = render(records, reference="pprof_py")
+    assert "## Medians by version" in text and "## Where the time went" in text and "| 0.10.0 | 2 |" in text
 
 
 def test_the_memory_guard_skips_a_fit_that_would_not_fit_the_driver(spark, tmp_path):
@@ -139,6 +195,9 @@ def test_task_metrics_come_from_the_status_store_when_the_rest_api_is_closed(spa
     assert out is not None and out["source"] == "status_store"
     assert out["jobs"] >= 1 and out["tasks"] >= 4 and out["executor_run_s"] >= 0
     assert all(stage["name"] for stage in out["heaviest_stages"]) and out["heaviest_stages"]
+    slowest = out["slowest_task"]                         # by the same route: where the longest task ran and what it was made of
+    if slowest is not None:                               # None only when no stage had tasks long enough to have a median
+        assert slowest["executor"] == "driver" and slowest["duration_s"] >= 0 and slowest["executor_attached_s_before"] >= 0
     assert metrics.executors()["cores"] >= 1
     assert metrics.collect("no-such-group")["jobs"] == 0
 

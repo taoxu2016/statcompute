@@ -4,6 +4,8 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
+import statistics
 from typing import Any, Dict, Iterable, List, Optional
 
 from .runner import local_path
@@ -36,6 +38,7 @@ def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "model": r["model"]["label"], "rows": spec["rows"], "providers": spec["providers"],
             "features": spec["features"], "design": spec["design"],
             "adapter": r["adapter"]["name"], "role": r["adapter"].get("role"), "repeat": r.get("repeat"),
+            "version": r.get("statcompute"),          # of this repository when the run was made
             "status": r["status"],
             "compare_s": None if not timing else round(
                 timing["wall_s"] if r["adapter"].get("kind") == "spark" else (timing.get("phases") or {}).get("fit", timing["wall_s"]), 2),
@@ -61,6 +64,82 @@ def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "note": "" if not r.get("error") else r["error"]["message"][:160],
         })
     return rows
+
+
+def medians(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Completed runs by model, size, adapter and version of this repository: how many, how many of
+    them without a caveat, and the median and the smallest time to compare, over all of them and
+    over those without a caveat. The version separates the rounds of the engine in one results folder."""
+    groups: Dict[Any, List[Dict[str, Any]]] = {}
+    for row in summary(records):
+        if row["status"] == "ok" and row["compare_s"] is not None:
+            groups.setdefault((row["model"], row["rows"], row["features"], row["adapter"], row["version"]), []).append(row)
+    def order(key):                                   # versions as numbers, so that 0.10.0 follows 0.9.0
+        model, rows, features, adapter, version = key
+        return model, rows, features, adapter, [int(part) if part.isdigit() else 0 for part in str(version or "").split(".")]
+
+    out = []
+    for (model, rows, features, adapter, version), runs in sorted(groups.items(), key=lambda item: order(item[0])):
+        clean = [r for r in runs if not r["caveats"]]
+        fits = [r["fit_s"] for r in runs if r["fit_s"] is not None]
+        out.append({"model": model, "rows": rows, "features": features, "adapter": adapter, "version": version,
+                    "runs": len(runs), "median_compare_s": statistics.median(r["compare_s"] for r in runs),
+                    "min_compare_s": min(r["compare_s"] for r in runs),
+                    "median_fit_s": statistics.median(fits) if fits else None,
+                    "runs_without_caveat": len(clean),
+                    "median_compare_s_without_caveat": statistics.median(r["compare_s"] for r in clean) if clean else None})
+    return out
+
+
+def _site(name: str) -> str:
+    """A stage's name without the folders of its call site."""
+    return re.sub(r"\S*/", "", name or "")[:60]
+
+
+def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """For every completed run of a Spark implementation: its phases, its first evaluation beside a
+    later one where the adapter reports them, and the slowest single task among its heaviest stages,
+    with that stage's name, number of tasks and median task. A stall shows as one task far above its
+    stage's median; the number of tasks says which stage it was (the input's partitions, or the
+    working set's). `other_s` is the part of the call outside the reported phases. Records made
+    from version 0.12.0 on also say which executor ran that task, how long it had been attached
+    when the task started, and how much of the task was garbage collection or waiting for shuffle
+    data."""
+    out = []
+    for r in records:
+        timing, spark = r.get("timing") or {}, r.get("spark") or {}
+        if r.get("status") != "ok" or r["adapter"].get("kind") != "spark" or not timing:
+            continue
+        phases = timing.get("phases") or {}
+        during = (r.get("environment") or {}).get("during") or {}
+        seconds = ((r.get("fit") or {}).get("extras") or {}).get("evaluation_seconds") or []
+        stages = [s for s in spark.get("heaviest_stages") or [] if s.get("max_task_s") is not None]
+        slow = max(stages, key=lambda s: s["max_task_s"], default=None)
+        low, high = during.get("executors_min"), during.get("executors_max")
+        seen = [str(c[1]) for c in during.get("changes") or []]
+        task = spark.get("slowest_task") or {}
+        row = {"model": r["model"]["label"], "features": r["dataset"]["spec"]["features"], "adapter": r["adapter"]["name"],
+               "version": r.get("statcompute"), "wall_s": round(timing["wall_s"], 1),
+               "prepare_s": None if "prepare" not in phases else round(phases["prepare"], 1),
+               "fit_s": None if "fit" not in phases else round(phases["fit"], 1),
+               "other_s": round(timing["wall_s"] - sum(phases.values()), 1) if phases else None,
+               "first_evaluation_s": round(seconds[0], 1) if seconds else None,
+               "later_evaluation_s": round(statistics.median(seconds[1:]), 1) if len(seconds) > 1 else None,
+               "slowest_task_s": None if slow is None else round(slow["max_task_s"], 1),
+               "its_stage": None if slow is None else f"{slow.get('stage')}: {_site(slow.get('name'))}",
+               "stage_tasks": None if slow is None else slow.get("tasks"),
+               "stage_median_task_s": None if slow is None else round(slow["median_task_s"], 2),
+               "on_executor": task.get("executor"),
+               "executor_attached_s_before": None if task.get("executor_attached_s_before") is None
+               else round(task["executor_attached_s_before"], 1),
+               "task_gc_s": None if task.get("gc_s") is None else round(task["gc_s"], 1),
+               "task_fetch_wait_s": None if task.get("fetch_wait_s") is None else round(task["fetch_wait_s"], 1),
+               "task_locality": task.get("locality"),
+               "spilled_gb": _gb(spark.get("disk_spilled_bytes")),
+               "executors": low if low == high else f"{low}-{high}",
+               "executors_seen": ">".join(seen[:12]) + ("..." if len(seen) > 12 else "")}
+        out.append(row)
+    return out
 
 
 def to_markdown(rows: List[Dict[str, Any]], columns: Optional[List[str]] = None) -> str:

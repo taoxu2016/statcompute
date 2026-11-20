@@ -215,7 +215,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 114 tests. In the sandbox of 2026-11-20 (no R installed) 111 pass and the 3
+The repository has 115 tests. In the sandbox of 2026-11-20 (no R installed) 112 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5
@@ -253,7 +253,15 @@ records are not in the repository yet):
 
 Without strata the fits used 8 to 10 of 40 cores. Their task counts, 190 and 366, fit an input of
 17 and 33 partitions, which is the number of files the generator writes at these sizes, and the
-layout of version 0.5 kept the input's partitions. Version 0.6 has not run on a cluster.
+layout of version 0.5 kept the input's partitions.
+
+Version 0.6 of this specification (0.10.0 of the repository) ran on 2026-11-20, two runs per
+configuration; `docs/reports/2026-11-20-databricks-round-12.md` has the analysis. In short: a fit
+with strata or providers ran 101 tasks fewer, as intended; without strata the fits used 14 to 18
+effective cores instead of 7 to 12; and no call was shown to be faster. Six of the eight calls with
+strata or providers spent 33 to 64 seconds outside the fit phase, as three of twenty-two had
+before, and what such a stall is has not been established. No estimate of this version has been
+compared with pprof_py on the cluster yet: the report compared an earlier run.
 
 ### 5.3 The reference's stopping rule
 

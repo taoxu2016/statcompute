@@ -58,7 +58,8 @@ provider.
 | Phases | Inside the adapter: load, prepare, fit | Reference packages do not expose their internal phases |
 | Tasks, executor run time, executor CPU time, GC time, shuffle and spill bytes | Spark UI REST API for the run's job group, or the status store behind it through py4j where the API is closed; `spark.source` says which | Executor CPU time excludes Python workers; for `lab_spark` use run time |
 | Effective cores | Executor run time (or CPU time) divided by wall time | A measure of how much of the cluster a fit used |
-| Spread of task times | Median, 95th percentile and maximum for the ten heaviest stages | The ratio of maximum to median shows stragglers |
+| Spread of task times | Median, 95th percentile and maximum for the fifteen heaviest stages | The ratio of maximum to median shows stragglers |
+| The slowest task | For the stage with the longest task: its executor, how long that executor had been attached when the task started, the task's duration, garbage collection, wait for shuffle data and locality (from version 0.12.0) | One task per run. It says what kind of stall a run had, not how many |
 | Driver peak memory and CPU | Sampling the driver process, alone and with its children (an Rscript run; the JVM of a local session) | For single-machine implementations this is the whole cost; pprof (R) also reports R's own peak |
 | Executor peak heap | REST API | Peak since the executor started, not per run (OI-10) |
 | Iterations, convergence | The implementation's own report | Reported, never compared |
@@ -66,10 +67,19 @@ provider.
 
 ## 5. Comparisons
 
-`statcompute/validation/compare.py` compares each completed run with the reference's run on the
-same dataset and model: coefficient differences in absolute terms and in standard errors, relative
-differences of standard errors and of the log-likelihood, each also as a multiple of its tolerance
-class. A row is `like_for_like` only if both adapters reported `exact`.
+`statcompute/validation/compare.py` compares every completed run with the reference's first
+completed run on the same dataset and model: coefficient differences in absolute terms and in
+standard errors, relative differences of standard errors and of the log-likelihood, each also as a
+multiple of its tolerance class. There is one row per adapter and version, with the number of runs
+compared and the run furthest from the reference; until version 0.11.0 only the first run of an
+adapter was compared, so a later round's estimates went unseen in a folder that held an earlier
+round's. A row is `like_for_like` only if both adapters reported `exact`.
+
+A results folder usually holds runs of several rounds. Every record carries the version of this
+repository that made it, and the report reads the folder version by version: the runs with their
+version, medians by version (with and without the runs that carry a caveat), and for every run of a
+Spark implementation where its time went: phases, the first evaluation beside a later one, and the
+slowest task with its stage.
 
 Three things are never concluded from this harness:
 

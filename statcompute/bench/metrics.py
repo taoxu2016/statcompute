@@ -17,6 +17,16 @@ import urllib.request
 from typing import Any, Dict, List, Optional
 
 
+def _millis(stamp: Optional[str]) -> Optional[int]:
+    """Milliseconds since 1970 of a time as the REST API writes it: 2026-11-20T16:32:04.123GMT."""
+    if not stamp:
+        return None
+    import datetime
+
+    moment = datetime.datetime.strptime(stamp.replace("GMT", "+0000"), "%Y-%m-%dT%H:%M:%S.%f%z")
+    return int(moment.timestamp() * 1000)
+
+
 class SparkMetrics:
     """Two sources for the same numbers: the UI's REST API and, where that is not reachable from
     the driver, the status store behind it, read through py4j. Records say which was used."""
@@ -83,6 +93,55 @@ class SparkMetrics:
                 return None
             run = summary.get().executorRunTime()
             return [float(run.apply(i)) for i in range(3)]
+        except Exception:
+            return None
+
+    def _slowest_task(self, source: str, stage_id: int, attempt_id: int) -> Optional[Dict[str, Any]]:
+        """The longest task of one stage: which executor ran it, how long that executor had been
+        attached when the task started, and what the task's time was made of. A stall on a cluster
+        that changes size is one such task; these numbers say which kind. None when unavailable."""
+        try:
+            if source == "rest":
+                rows = self._get(f"stages/{stage_id}/{attempt_id}/taskList?length=1&sortBy=-runtime")
+                if not rows:
+                    return None
+                task = rows[0]
+                m = task.get("taskMetrics") or {}
+                executor, launched = str(task.get("executorId")), _millis(task.get("launchTime"))
+                added = next((_millis(e.get("addTime")) for e in self._get("allexecutors") or [] if str(e.get("id")) == executor), None)
+                raw = {"duration": task.get("duration"), "run": m.get("executorRunTime"), "deserialize": m.get("executorDeserializeTime"),
+                       "gc": m.get("jvmGcTime"), "scheduler_delay": task.get("schedulerDelay"),
+                       "fetch_wait": (m.get("shuffleReadMetrics") or {}).get("fetchWaitTime"),
+                       "cpu_ns": m.get("executorCpuTime"), "input_bytes": (m.get("inputMetrics") or {}).get("bytesRead"),
+                       "shuffle_read_bytes": (m.get("shuffleReadMetrics") or {}).get("remoteBytesRead"),
+                       "locality": task.get("taskLocality")}
+            else:
+                store, jvm = self._store(), self._sc._gateway.jvm
+                tasks = store.taskList(stage_id, attempt_id, 0, 1, jvm.org.apache.spark.status.api.v1.TaskSorting.DECREASING_RUNTIME,
+                                       jvm.java.util.ArrayList())
+                if tasks.size() == 0:
+                    return None
+                task = tasks.apply(0)
+                executor, launched = str(task.executorId()), int(task.launchTime().getTime())
+                listed, added = store.executorList(False), None
+                for i in range(listed.size()):
+                    if str(listed.apply(i).id()) == executor:
+                        added = int(listed.apply(i).addTime().getTime())
+                raw = {"duration": int(task.duration().get()) if task.duration().isDefined() else None,
+                       "scheduler_delay": int(task.schedulerDelay()), "locality": str(task.taskLocality())}
+                if task.taskMetrics().isDefined():
+                    m = task.taskMetrics().get()
+                    raw.update(run=int(m.executorRunTime()), deserialize=int(m.executorDeserializeTime()), gc=int(m.jvmGcTime()),
+                               fetch_wait=int(m.shuffleReadMetrics().fetchWaitTime()), cpu_ns=int(m.executorCpuTime()),
+                               input_bytes=int(m.inputMetrics().bytesRead()),
+                               shuffle_read_bytes=int(m.shuffleReadMetrics().remoteBytesRead()))
+            seconds = lambda key: None if raw.get(key) is None else raw[key] / 1e3  # noqa: E731
+            return {"stage": int(stage_id), "executor": executor, "locality": raw.get("locality"),
+                    "executor_attached_s_before": None if added is None or launched is None else (launched - added) / 1e3,
+                    "duration_s": seconds("duration"), "run_s": seconds("run"), "deserialize_s": seconds("deserialize"),
+                    "gc_s": seconds("gc"), "scheduler_delay_s": seconds("scheduler_delay"), "fetch_wait_s": seconds("fetch_wait"),
+                    "cpu_s": None if raw.get("cpu_ns") is None else raw["cpu_ns"] / 1e9,
+                    "input_bytes": raw.get("input_bytes"), "shuffle_read_bytes": raw.get("shuffle_read_bytes")}
         except Exception:
             return None
 
@@ -156,6 +215,9 @@ class SparkMetrics:
             spreads.append(entry)
         out["heaviest_stages"] = spreads
         out["worst_straggler_ratio"] = max((s["straggler_ratio"] for s in spreads if "straggler_ratio" in s), default=None)
+        slow = max((s for s in spreads if "max_task_s" in s), key=lambda s: s["max_task_s"], default=None)
+        attempts = {s["stageId"]: s.get("attemptId", 0) for s in heavy}
+        out["slowest_task"] = None if slow is None else self._slowest_task(source, slow["stage"], attempts[slow["stage"]])
         return out
 
 

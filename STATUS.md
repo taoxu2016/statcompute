@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-20, version 0.11.0 (round 13: the maintainer's decisions on what this repository is for, and a
-proposal for what stands in place of bitwise reproducibility).
+Updated 2026-11-20, version 0.12.0 (round 14: round 12's runs on the cluster read, and a report that reads a results
+folder version by version and says where a run's time went).
 
 ## What exists
 
@@ -23,8 +23,8 @@ proposal for what stands in place of bitwise reproducibility).
 All of the above ran in one sandbox: Python 3.12, PySpark 4.0.1 in local mode, R 4.3.3, one core;
 pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned commits. 26 tests
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
-Rounds 12 and 13 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, of which
-111 pass and the 3 that need R are skipped, in about five minutes.
+Rounds 12 to 14 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13 and 115
+since round 14, of which 112 pass and the 3 that need R are skipped, in about five minutes.
 
 ## First cluster run, 2026-11-16
 
@@ -119,9 +119,34 @@ Measured in the sandbox (probe A-10, `docs/research/flag-margins.md`; logistic m
 engine and pprof_py at its tightest tolerance, and by 9e-9 between pprof_py at 1e-5 and at 1e-12. No flag differs.
 The provider nearest a cut-off is 1.5e-4 away for a z statistic and 3.7e-5 for the exact p-value.
 
+## Round 12 on the cluster, and round 14 (2026-11-20)
+
+The maintainer ran version 0.10.0 with both plans, two runs per configuration, and sent the two reports. The analysis
+is `docs/reports/2026-11-20-databricks-round-12.md`. In short:
+
+- **Confirmed:** one job fewer per fit (101 tasks fewer with strata or providers); without strata 14 to 18 effective
+  cores instead of 7 to 12.
+- **Not shown:** that any call is faster. Six of the eight calls with strata or providers took 49 to 76 seconds, against
+  medians of 19 to 34 before, all of it outside the fit phase; the fit phase per evaluation was no shorter. Seven of
+  the eight runs carry a caveat about the cluster's size, against two of twenty-two before, so the versions were not
+  measured under the same conditions.
+- **The stalls** of 30 seconds and more outside the fit phase are older than round 12 and larger than anything it
+  changed (OI-31). What they are is not established.
+- **Not compared:** round 12's estimates. The report compared each adapter's first run, a run of 0.9.0.
+
+Round 14 changes the harness, not the engine:
+
+| Part | State |
+|---|---|
+| The report reads a results folder version by version | Every run shows the version that made it; a table of medians by version, with and without the runs that carry a caveat |
+| Where the time went | For every run of a Spark implementation: phases, the first evaluation beside a later one, the slowest task with its stage and that stage's median, spilled bytes, the executors seen during the fit. From the records that exist |
+| Agreement of every run | One row per adapter and version, with the number of runs and the run furthest from the reference; before, only an adapter's first run was compared |
+| The slowest task, recorded | From 0.12.0: its executor, how long that executor had been attached, the task's duration, garbage collection, wait for shuffle data and locality. By both routes to Spark's metrics; tried in local mode only |
+
 ## What has not happened
 
-- No run of this version of the engine on Databricks; version 0.9.0 ran on 2026-11-18.
+- No comparison of an estimate of version 0.10.0 or later with pprof_py on Databricks: 0.9.0 and 0.10.0 have run there,
+  and the report compared a run of 0.9.0. Versions 0.11.0 and 0.12.0 have not run there.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -131,14 +156,13 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. Rerun plans `compare_5m` and `unstratified_5m` with this version (both hold 10 executors). Compare whole calls:
-   for Cox "prepare" now contains the first evaluation (D-11), and `evaluation_seconds` in the records has each one.
-   A third run of `unstratified_5m` with `"engine_partitions": "input"` in its options shows what the new layout
-   without strata buys or costs.
-2. On the cluster, count pprof_py's likelihood calls in the 100-feature fit without strata (OI-24).
-3. Decisions D-08 to D-11 and D-15 to D-17 are proposed and open. With this round applied, the logistic records of the
-   rerun also say whether every run flagged the same providers.
-4. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+1. With round 14 applied, run notebook `03_report` again on the two results folders, without any new fit: the report
+   then compares round 12's estimates with pprof_py and shows where each of its calls spent the time (OI-31).
+2. Then run the two plans again: records made with 0.12.0 say which executor ran the slowest task and what that task's
+   time was made of. More than two repeats would help (OI-32).
+3. On the cluster, count pprof_py's likelihood calls in the 100-feature fit without strata (OI-24).
+4. Decisions D-08 to D-11 and D-15 to D-17 are proposed and open.
+5. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

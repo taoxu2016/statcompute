@@ -4,12 +4,12 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ..validation import compare_records, flags_across_records
-from .results import summary, to_markdown
+from .results import medians, summary, to_markdown, where_time_went
 
-TIMING = ["model", "rows", "features", "design", "adapter", "role", "status", "compare_s", "wall_s", "fit_s", "iterations",
+TIMING = ["model", "rows", "features", "design", "adapter", "role", "version", "status", "compare_s", "wall_s", "fit_s", "iterations",
           "executors", "tasks", "effective_cores", "share_of_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
           "driver_peak_rss_gb", "cluster_changed", "caveats", "note"]
-AGREEMENT = ["dataset", "model", "adapter", "reference", "like_for_like", "max_abs_coefficient_difference",
+AGREEMENT = ["dataset", "model", "adapter", "version", "runs", "reference", "like_for_like", "max_abs_coefficient_difference",
              "max_coefficient_difference_in_se", "max_rel_se_difference", "rel_log_likelihood_difference",
              "coefficients_over_T_COEF", "iterations"]
 
@@ -32,8 +32,21 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
              "already in memory. A run with an entry under `caveats` is not a fair timing. A status of `running` means the "
              "process died during that fit, typically because the driver ran out of memory.\n",
              to_markdown(summary(records), TIMING),
+             "## Medians by version\n",
+             "Completed runs by model, size, adapter and the version of this repository that made them. A results folder "
+             "that has collected several rounds is read here round by round. `without_caveat` leaves out the runs "
+             "whose timing the harness itself calls unfair.\n",
+             to_markdown(medians(records)),
+             "## Where the time went\n",
+             "Completed runs of the Spark implementations. `other_s` is the part of the call outside the reported phases. "
+             "For the engine's Cox fits from version 0.10.0 on, `prepare_s` contains the first evaluation, which builds the "
+             "working set, and `fit_s` is the evaluations after it. The slowest task is the longest single task among the "
+             "run's heaviest stages: far above `stage_median_task_s`, it is a stall, and `stage_tasks` says where "
+             "(the input's partitions, or the working set's).\n",
+             to_markdown(where_time_went(records)),
              f"## Numerical agreement with {reference}\n",
-             "Only rows with `like_for_like` true compare implementations that fit exactly the same model. "
+             "Only rows with `like_for_like` true compare implementations that fit exactly the same model. Every run is "
+             "compared; a row shows, for one adapter and version, the run furthest from the reference. "
              "Iterations are listed as [adapter, reference] and are not a criterion.\n",
              to_markdown(compare_records(records, reference), AGREEMENT)]
     flags = flags_across_records(records)

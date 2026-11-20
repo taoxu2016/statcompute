@@ -42,9 +42,20 @@ def compare_fits(fit: Dict[str, Any], reference: Dict[str, Any]) -> Dict[str, An
     return out
 
 
+def _version(record: Dict[str, Any]) -> Optional[str]:
+    """What tells two builds of an implementation apart: for code of this repository its version
+    when the run was made, for a reference package its own commit or version."""
+    adapter = record["adapter"]
+    if adapter.get("role") in ("engine", "prototype"):
+        return record.get("statcompute")
+    return adapter.get("commit") or adapter.get("version")
+
+
 def compare_records(records: Iterable[Dict[str, Any]], reference: str = "pprof_py") -> List[Dict[str, Any]]:
     """Every completed run against the reference adapter's first completed run on the same dataset
-    and model. Runs without a completed reference run are left out."""
+    and model, one row per adapter and version: the number of runs compared, and the comparison of
+    the run that is furthest from the reference, so that no run of a version is left unseen. Runs
+    without a completed reference run are left out."""
     groups: Dict[Any, List[Dict[str, Any]]] = {}
     for r in records:
         if r.get("status") == "ok":
@@ -54,15 +65,16 @@ def compare_records(records: Iterable[Dict[str, Any]], reference: str = "pprof_p
         base: Optional[Dict[str, Any]] = next((r for r in runs if r["adapter"]["name"] == reference), None)
         if base is None:
             continue
-        seen = set()
+        builds: Dict[Any, List[Dict[str, Any]]] = {}
         for r in runs:
-            name = r["adapter"]["name"]
-            if name == reference or name in seen:
-                continue
-            seen.add(name)
+            if r["adapter"]["name"] != reference:
+                builds.setdefault((r["adapter"]["name"], _version(r)), []).append(r)
+        for (name, version), same in builds.items():
+            compared = [(compare_fits(r["fit"], base["fit"]), r) for r in same]
+            worst, r = max(compared, key=lambda pair: pair[0]["max_abs_coefficient_difference"])
             exact = r["support"]["status"] == "exact" and base["support"]["status"] == "exact"
-            out.append({"dataset": dataset, "model": model, "adapter": name, "reference": reference,
-                        "like_for_like": exact,
+            out.append({"dataset": dataset, "model": model, "adapter": name, "version": version, "runs": len(same),
+                        "reference": reference, "like_for_like": exact,
                         "notes": {name: r["support"]["notes"], reference: base["support"]["notes"]},
-                        **compare_fits(r["fit"], base["fit"])})
+                        **worst})
     return out
