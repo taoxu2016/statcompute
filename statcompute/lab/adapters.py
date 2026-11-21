@@ -20,9 +20,11 @@ from .. import __version__
 from ..adapters import EXACT, UNSUPPORTED, Adapter, FitResult, Support, register
 from ..testkit.localdata import footprint_bytes, load_arrays
 from ..testkit.specs import COX
-from . import kernels
-from .dist import ship_package
+from . import kernels as _kernels
+from .dist import functions_of, ship_package
 from .newton import maximize
+
+kernels = functions_of(_kernels)       # a namespace of functions, so that no module object travels with a task (engine/dist.py)
 
 PARTIAL_SCHEMA = "ll double, u binary, i binary, n long"
 

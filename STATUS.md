@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-21, version 0.17.0 (round 19: every implementation in one session on the cluster; the report lists the
-builds that ran and judges the pin itself; an experiment on the size of partitions prepared).
+Updated 2026-11-21, version 0.18.0 (round 20: the comparison with pprof_spark stands at its pinned build; the package's
+code travels inside each task, so a changed package needs no restart of the cluster).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass.
 
 ## First cluster run, 2026-11-16
 
@@ -250,11 +250,30 @@ partition, and plan `engine_partitions_5m_warm`, which runs them beside the defa
 RI-1, the report for pprof_py's maintainers drafted in `docs/reference-reports/`, was checked against pprof_py's
 repository on 2026-11-21: its head is still the commit the draft cites, and the loop is unchanged.
 
+## Round 20 (2026-11-21): the pin confirmed; no more restarts for a changed package
+
+**The comparison with pprof_spark stands.** The report rendered with round 19 names the builds: the session of version
+0.16.0 ran pprof_spark at `b92919c`, the pinned commit, and the earlier session at `ada822d` (round 163). In one session,
+by medians of four, the engine's whole calls are 1.8 to 4.6 times shorter than pprof_spark's; 1.7 to 4.5 times leaving
+out the runs that carry a caveat (`docs/reports/2026-11-21-databricks-warm-runs.md`, sections 8 and 9; OI-36 closed).
+
+**The plan for the size of partitions measured nothing.** It was started with version 0.17.0 on a cluster that had run
+0.16.0, and every fit was refused within three seconds: the executors still had the earlier version's archive. The
+assistant's instructions for that run had left out the restart.
+
+**Round 20 removes the need for it.** The package's code now travels inside the function of every task: PySpark's
+pickler is told to send this package by value (`statcompute/engine/dist.py`). The executors need no copy of the
+package and cannot run an older one than the driver; after pulling a new version it is enough to run the notebook
+again. Tested in the sandbox with executors whose own copy of the package is stale and refuses to import: the fits
+run by value and fail by reference (`tests/test_ship.py`). A task's function weighs 13 to 28 kB that way, against
+3 kB, and carries the kernels' functions but no module object, whose loader and path would belong to the driver's
+machine. The archive is kept as the fallback, with its guard. Every model's `execution` says how its code was sent.
+
 ## What has not happened
 
-- No run with pprof_spark at a build known to be the pinned one (OI-36): the session of round 19 has the runs, and the
-  next rendering of its report says which build they are.
-- No run of the engine at other partition sizes on Databricks (OI-25), and none of version 0.17.0.
+- No completed run of the engine at other partition sizes on Databricks (OI-25): the first attempt was refused fit by
+  fit, the cluster not having been restarted after the package changed.
+- No run of version 0.18.0 on Databricks: sending the package by value is untried there (OI-38).
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -264,13 +283,12 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. Render the report of `compare_5m_warm` again with round 19 applied (no new fit): its section "Implementations" says
-   which build of pprof_spark ran and whether it is the pinned one (OI-36).
-2. Run `engine_partitions_5m_warm`: the engine at 50,000, 125,000 and 250,000 rows per partition (OI-25).
-3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
-4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
-5. The remaining Newton step in the harness (D-09, OI-34); the engine against its prototype (OI-35).
-6. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+1. With round 20 applied and without restarting the cluster, run `engine_partitions_5m_warm`: the engine at 50,000,
+   125,000 and 250,000 rows per partition (OI-25). It is also the first run of sending the package by value (OI-38).
+2. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
+3. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+4. The remaining Newton step in the harness (D-09, OI-34); the engine against its prototype (OI-35).
+5. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

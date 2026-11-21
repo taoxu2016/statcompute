@@ -62,7 +62,7 @@ CoxPH("time", "event", features, strata="provider", baseline=True).fit(frame).ba
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 122 tests, about five minutes
+pytest -q                                     # 125 tests, about six minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```

@@ -30,11 +30,15 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from . import kernels, timegrid
-from .dist import ship_package
+from . import kernels as _kernels
+from . import timegrid as _timegrid
+from .dist import functions_of, ship_package
 from .local import bounded_gamma
 from .newton import maximize
 from .record import execution_record
+
+# The kernels as namespaces of functions: what a task carries to an executor holds no module object (see dist.py).
+kernels, timegrid = functions_of(_kernels), functions_of(_timegrid)
 
 ROWS_PER_PARTITION = 50_000
 MAX_HELD_ROWS = 200_000
@@ -705,7 +709,7 @@ class CoxPH:
         and sorted by it, so that every fit sums in the same order."""
         from pyspark.sql import functions as F
 
-        ship_package(frame.sparkSession)
+        shipped = ship_package(frame.sparkSession)
         started = clock.perf_counter()
         p, efron, has_entry = len(self.features), self.ties == "efron", bool(self.entry)
         columns, scalars, conditions = self._columns(stratified=False)
@@ -782,13 +786,13 @@ class CoxPH:
                                        rows_placed=placed),
                         {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds,
                         execution=execution_record(frame.sparkSession, layout="time grid", partitions=partitions,
-                                                   rows_placed=placed, row_id=self.row_id))
+                                                   rows_placed=placed, row_id=self.row_id, code_sent=shipped))
 
     def _fit_strata(self, frame) -> CoxModel:
         from pyspark.sql import functions as F
 
         spark = frame.sparkSession
-        ship_package(spark)
+        shipped = ship_package(spark)
         started = clock.perf_counter()
         p = len(self.features)
         columns, scalars, conditions = self._columns(stratified=True)
@@ -838,7 +842,8 @@ class CoxPH:
                                        passes_per_evaluation=1),
                         {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds,
                         execution=execution_record(spark, layout="whole strata", partitions=partitions,
-                                                   rows_per_partition=self.rows_per_partition, row_id=self.row_id), **extra)
+                                                   rows_per_partition=self.rows_per_partition, row_id=self.row_id,
+                                                   code_sent=shipped), **extra)
 
     def _standardized(self, work, frame, p: int, beta: np.ndarray):
         """He and Schaubel's two-stage measure, as pprof_py computes it for a provider-stratified fit: the national
@@ -893,7 +898,7 @@ class LogisticFE:
         from pyspark.sql import functions as F
 
         spark = frame.sparkSession
-        ship_package(spark)
+        shipped = ship_package(spark)
         started = clock.perf_counter()
         p = len(self.features)
         key_type = frame.schema[self.provider].dataType.simpleString()
@@ -984,6 +989,6 @@ class LogisticFE:
              "rows_per_partition": self.rows_per_partition},
             seconds, evaluation_seconds=evaluation_seconds,
             execution=execution_record(spark, layout="whole providers", partitions=partitions,
-                                       rows_per_partition=self.rows_per_partition, row_id=self.row_id),
+                                       rows_per_partition=self.rows_per_partition, row_id=self.row_id, code_sent=shipped),
             providers=int(providers), bounded_low=int(low),
             bounded_high=int(high), median_gamma=state["median"], provider_effects=effects)

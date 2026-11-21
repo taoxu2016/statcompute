@@ -187,6 +187,15 @@ providers.
   layouts or across BLAS builds, results agree to rounding, not bit for bit. This is weaker than
   pprof_spark's guarantee. By decision D-14 bitwise identity is not an absolute requirement;
   `docs/spec/reproducibility.md` says what stands in its place.
+- **The package on the executors.** The package's code travels inside the function of every task:
+  PySpark's pickler is told to send this package by value. The executors need no copy of it and
+  cannot run an older one than the driver; a changed package needs no restart of anything. A task's
+  function is 13 to 28 kB that way. It carries the kernels' functions and no module object: the
+  functions on the executors reach the kernels through namespaces of functions, because a module
+  sent by value would take its loader and its file's path along. Tested with executors whose own
+  copy is stale and refuses to import (`tests/test_ship.py`); on a cluster from version 0.18.0 on,
+  not yet run there. The earlier way, an archive added to the session, is the fallback, and
+  refuses to go on when the package has changed since it was sent.
 - **The record of a fit** (decision D-16). Every model carries `execution`: the versions of this
   package and of Spark, the libraries on the driver with their BLAS, the Arrow batch size, and the
   layout: partitions, how the rows are placed, the row identifier. `executor_libraries(spark)` asks
@@ -224,7 +233,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 122 tests. In the sandbox of 2026-11-21 (no R installed) 119 pass and the 3
+The repository has 125 tests. In the sandbox of 2026-11-21 (no R installed) 122 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5
@@ -285,7 +294,7 @@ features, 14.4 to 16.4 and 19.9 for the logistic model at 50 and 100, and withou
 0.7 of this specification. Version 0.7 has run on the cluster with strata and with providers
 (`compare_5m_warm`, 2026-11-21, with every other implementation in one session): whole calls of
 19.7 and 19.8 seconds for Cox at 50 and 100 features and 15.0 and 19.0 for the logistic model by
-medians of four, 1.8 to 4.6 times shorter than pprof_spark's. Without strata it has not run there;
+medians of four, 1.8 to 4.6 times shorter than pprof_spark's at its pinned build `b92919c`. Without strata it has not run there;
 the configuration that is now its default has, as `partitions="input"`.
 
 ### 5.3 The reference's stopping rule

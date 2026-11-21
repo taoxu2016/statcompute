@@ -76,7 +76,7 @@ What must be kept with a fit so that someone else can say what produced its digi
 
 From round 18 the engine attaches the record to the model it returns, as `execution`, so that the audit trail does not
 depend on the harness: the versions of the package and of Spark, the driver's libraries and BLAS, the Arrow batch size,
-and the layout. The executors' libraries are not asked for during a fit, which would cost a job;
+the layout, and how the package's code was sent to the executors. The executors' libraries are not asked for during a fit, which would cost a job;
 `statcompute.engine.executor_libraries(spark)` returns them when the caller wants them in the record.
 
 ## 4. What still repeats bit for bit

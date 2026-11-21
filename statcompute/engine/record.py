@@ -34,8 +34,10 @@ def _libraries() -> Dict[str, Any]:
 
 def execution_record(spark, **layout: Any) -> Dict[str, Any]:
     """The driver's side of the record: package and Spark versions, the libraries here, the Arrow
-    batch size (which fixes the batches, and with them the sums, of a fit without strata) and the
-    layout the caller names. `executors` is filled by `executor_libraries` when someone asks."""
+    batch size (which fixes the batches, and with them the sums, of a fit without strata), the
+    layout the caller names and how the package's code was sent to the executors (`code_sent`: by
+    value, so that they ran the driver's code, or as an archive). `executors` is filled by
+    `executor_libraries` when someone asks."""
     from .. import __version__
 
     try:

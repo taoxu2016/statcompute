@@ -177,3 +177,26 @@ Whole calls in seconds: median of four, and the best.
 - **Flags.** The same providers flagged in all eight runs of each logistic dataset, the four of
   section 6 and these four.
 
+## 9. Which builds of pprof_spark ran
+
+The report of `compare_5m_warm` rendered with round 19 lists the builds:
+
+| Records | Session | Commit of pprof_spark | The pinned build |
+|---|---|---|---|
+| 16 of pprof_spark, 16 of `pprof_spark_cached` | With version 0.14.0 (section 5) | `ada822d` (round 163, 2026-11-18) | No |
+| 16 and 16 | With version 0.16.0 (section 8) | `b92919c` (round 177, 2026-11-21) | Yes |
+
+So the comparison of section 8 is with pprof_spark at the build the lock pins, in one session, and
+the caveat about the pin is gone from those 32 records. Left out the runs that still carry a caveat
+(the cluster changed size during 5 of the 64), the medians are 19.7, 19.8, 15.7 and 19.0 seconds for
+the engine and 34.2, 50.4, 47.7 and 84.8 for pprof_spark: 1.7 to 4.5 times. What the comparison
+covers: synthetic data of 5 million rows and 8,000 providers, 50 and 100 features, the simple design,
+four repeats, an autoscaling cluster of ten workers of 4 vCPUs, the stored table read and the Python
+workers started before each call. pprof_spark's code has not been read again at this commit (OI-37).
+
+The same day the plan `engine_partitions_5m_warm` was started with version 0.17.0 on a cluster that
+had run 0.16.0. All 12 first fits stopped within three seconds with "the statcompute package has
+changed since it was sent to the executors": the archive of the earlier version was on the
+executors. Nothing was measured. Round 20 sends the package's code inside each task, so that a
+changed package needs no restart.
+

@@ -51,6 +51,12 @@ Add https://github.com/taoxu2016/statcompute as a Git folder in the workspace. C
 
 The notebooks are in `notebooks/databricks/`. They put the repository on the Python path themselves.
 
+**After pulling a new version of the repository, run the notebook again: nothing needs restarting.**
+The notebooks import the package afresh on every run, and from version 0.18.0 the package's code
+travels to the executors inside each task, so the executors always run what the driver runs. Before
+that version the package went to the executors once as an archive, and a changed package needed a
+restart of the cluster.
+
 ## Stage A. Environment check (two minutes)
 
 Run `00_environment`. It fits nothing. It prints the cluster's facts, lists problems, and shows
@@ -134,3 +140,4 @@ cluster identifier is hashed, and e-mail addresses and user folders are removed.
 | Status `timeout` | Cancelled after the plan's `timeout_s` |
 | Status `running` | The process died during that fit, usually the driver out of memory |
 | An entry under `caveats` | The run completed but its timing is not a fair one; the entry says why |
+| "the statcompute package has changed since it was sent to the executors" | A version before 0.18.0 (or the archive asked for with `STATCOMPUTE_SHIP=archive`) on a cluster that had run another version: restart the cluster, or move to 0.18.0, which does not need it |
