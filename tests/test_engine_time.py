@@ -156,19 +156,28 @@ def test_unstratified_cox_on_spark_equals_the_single_machine_fit(spark, survival
 
 
 def test_unstratified_cox_on_spark_repeats_bit_for_bit_whatever_the_inputs_partitions(survival):
-    """Round 12: without strata the rows are placed and sorted by row_id, so every fit adds in the same order."""
+    """Round 12: without strata the rows can be placed and sorted by row_id, so every fit adds in the same order.
+    Round 18 (decision D-19): on request only; by default they stay in the input's partitions."""
     frame, _ = survival
     fit = lambda data, **more: CoxPH("time", "event", FEATURES, None, ties="efron", entry="entry", weights="w", offset="o",  # noqa: E731
                                      rows_per_partition=1700, **more).fit(data)
-    first, second, relaid = fit(frame, row_id="id"), fit(frame, row_id="id"), fit(frame.repartition(5), row_id="id")
-    assert first.partitions == 4 and first.settings["rows_placed"] == "by row_id"
+    by_id = dict(row_id="id", partitions="rows")
+    first, second, relaid = fit(frame, **by_id), fit(frame, **by_id), fit(frame.repartition(5), **by_id)
+    assert first.partitions == 4 and first.settings["rows_placed"] == "by row_id" and first.settings["rows_per_partition"] == 1700
     for other in (second, relaid):
         assert np.array_equal(first.coefficients, other.coefficients) and np.array_equal(first.covariance, other.covariance)
         assert first.log_likelihood == other.log_likelihood
     assert len(first.evaluation_seconds) == first.evaluations
-    # placed by a hash of the row, or left in the input's own partitions: the same fit, to rounding
-    hashed, asis = fit(frame), fit(frame, partitions="input")
-    assert hashed.settings["rows_placed"] == "by a hash of the row" and asis.settings["rows_placed"] == "as in the input"
+    # the default leaves the rows in the input's own partitions; a number places them, by a hash when there is no
+    # row identifier: the same fit each time, to rounding
+    asis, named, hashed = fit(frame), fit(frame, partitions="input"), fit(frame, partitions=3)
+    assert asis.settings["rows_placed"] == named.settings["rows_placed"] == "as in the input"
+    assert asis.partitions == named.partitions == frame.rdd.getNumPartitions() and asis.settings.get("rows_per_partition") is None
+    assert fit(frame.repartition(5)).partitions == 5
+    assert hashed.settings["rows_placed"] == "by a hash of the row" and hashed.partitions == 3
+    # the record of what produced the digits is kept with the model (decision D-16)
+    assert first.execution["layout"] == "time grid" and first.execution["partitions"] == 4 and first.execution["rows_placed"] == "by row_id"
+    assert first.execution["driver"]["numpy"] == np.__version__ and first.execution["arrow_batch_rows"] and first.execution["executors"] is None
     for other in (hashed, asis):
         assert np.max(np.abs(other.coefficients - first.coefficients) / first.standard_errors) < 1e-9
         assert np.max(np.abs(other.standard_errors / first.standard_errors - 1)) < 1e-10
@@ -223,8 +232,10 @@ def test_the_harness_runs_the_engine_without_strata(spark, tmp_path):
     comparison = compare_records(records, reference="lab_numpy")
     assert len(comparison) == 1 and comparison[0]["coefficients_over_T_COEF"] <= 1 and comparison[0]["like_for_like"]
     extras = by["engine"]["fit"]["extras"]
-    assert extras["partitions"] == 1 and len(extras["evaluation_seconds"]) == extras["evaluations"]
-    # a plan can set the partitions of the fit without strata, or ask for the input's own (the layout before round 12)
+    assert extras["partitions"] >= 1 and len(extras["evaluation_seconds"]) == extras["evaluations"]
+    assert by["engine"]["fit"]["settings"]["rows_placed"] == "as in the input" and extras["execution"]["layout"] == "time grid"
+    # a plan can set the partitions of the fit without strata: a number or "rows" places the rows by row identifier
     plan["options"] = {"engine_partitions": 3}
     again = [r for r in run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "more")) if r["adapter"]["name"] == "engine"]
     assert again[0]["status"] == "ok" and again[0]["fit"]["extras"]["partitions"] == 3
+    assert again[0]["fit"]["settings"]["rows_placed"] == "by row_id"

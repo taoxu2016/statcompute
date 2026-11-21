@@ -15,12 +15,14 @@ What is run, under which conditions, what is measured, and what may be concluded
 
 On the standard cluster the first read of a stored file by an executor stalls one task for 17 to
 21 seconds, in whichever job reads the table first (`docs/reports/2026-11-20-databricks-round-12.md`,
-section 5). A plan may set the option `warm_input` to have the stored table read once before every
-timed Spark fit: `"all"` reads every column, `"footers"` only counts the rows. The record keeps the
-mode and the seconds, and the report shows them. It is off unless a plan sets it, because it
-changes what a timing means: a fit from a table the executors have already read (D-18, proposed). On the cluster on
-2026-11-21 it took that stall out of the timed calls; what remains is the first Python task of a new executor (D-20,
-proposed).
+section 5), and a new executor's first Python task takes 6.5 to 10.5 seconds. Timings that compare
+implementations or versions are therefore taken with both out of the way (decisions D-18 and D-20,
+approved 2026-11-21): a plan sets the option `warm_input`, and before every timed Spark fit the
+stored table is read once (`"all"` reads every column, `"footers"` only counts the rows) and one
+short Python task runs on every executor. The record keeps the mode, the seconds of the read, the
+seconds of the Python start and the libraries the executors reported; the report shows the two
+times. The plans named `..._warm` set it. A plan without it measures a first run on whatever
+executors are attached, which is what the earlier results folders hold.
 
 A run on a cluster that changed size is kept, flagged under `caveats`, and left out of timing
 comparisons. The same list names anything else that would distort a timing: pprof_py running

@@ -1,6 +1,7 @@
 # Status
 
-Updated 2026-11-21, version 0.15.0 (round 17: seven decisions approved, and the warm runs on the cluster read).
+Updated 2026-11-21, version 0.16.0 (round 18: D-18, D-19 and D-20 approved and implemented; the record of a fit kept
+with the model; pprof_spark pinned at its current head).
 
 ## What exists
 
@@ -24,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none.
+Round 17 added none; round 18 has 120, of which 117 pass.
 
 ## First cluster run, 2026-11-16
 
@@ -205,10 +206,26 @@ the register of issues). Open: D-18, and the two proposals of this round, D-19 a
 Round 17 changes little code: the two flag tolerances are named classes (T_FLAG_Z, T_FLAG_P), and an agreement row
 says how many steps the reference halved.
 
+## Round 18 (2026-11-21): the three decisions implemented
+
+The maintainer approved D-18, D-19 and D-20 on 2026-11-21, and will benchmark pprof_spark at its current version
+from now on, not at the old build.
+
+| Part | State |
+|---|---|
+| Without strata, the input's partitions by default (D-19) | `partitions` unset or `"input"`: the rows stay as stored, no shuffle, no sort. A number, or `"rows"`, places them by row identifier and sorts them, which repeats bit for bit: the default of rounds 12 to 17. The configuration that is now the default is the one that ran on the cluster as `partitions="input"`: 17.7 and 18.5 seconds at best |
+| The Python workers started before the clock (D-20) | Part of `warm_input`: after the read of the stored table, one short job whose tasks import NumPy, pandas, pyarrow and SciPy on every executor. Its seconds are in the record and the report (`python_started`). Untried on a cluster |
+| The record of a fit (D-16) | Every model carries `execution`: versions, the driver's libraries and BLAS, the Arrow batch size, the layout. The executors' libraries come from the job that starts their Python workers, in the harness, or from `executor_libraries(spark)` |
+| Plans | `unstratified_5m_warm` now names the layout by row identifier (`"engine_partitions": "rows"`), so that it keeps its meaning; `unstratified_5m_warm_input` names the input's |
+| pprof_spark's pin | `5db844e` (round 176), the head of its repository on 2026-11-21. Its capability notes were read 25 commits earlier and are due for another reading (OI-37) |
+
+Not done in this round: the Newton step that remains at pprof_py's estimate, in the harness (D-09, OI-34).
+
 ## What has not happened
 
 - No run of all implementations in one session with the stored table read first, and none with pprof_spark at a pinned
   build (OI-36).
+- No run of version 0.16.0 on Databricks: the Python start before the clock is untried there.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -218,12 +235,12 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. The maintainer's rulings on D-18, D-19 and D-20.
-2. Then, in one round: the default without strata (D-19), the Python workers started before the clock (D-20), the rest
-   of the execution record (D-16, OI-29), and the remaining Newton step in the harness (D-09, OI-34).
-3. Report RI-1 to pprof_py's maintainers (D-12).
-4. The commit of the pprof_spark build to benchmark, and one session of `compare_5m_warm` with every implementation
-   (OI-36).
+1. On the cluster: pprof_spark rebuilt at its current head, then `compare_5m_warm` once, all implementations in one
+   session (OI-36). The report then says whether a new executor still slows the first evaluation (OI-31).
+2. Report RI-1 to pprof_py's maintainers (D-12); the text is drafted in `docs/reference-reports/`.
+3. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+4. The remaining Newton step in the harness (D-09, OI-34), and why the engine is 2.5 to 4 seconds behind its prototype
+   with strata (OI-35).
 5. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is

@@ -3,10 +3,13 @@
 Layout. The rows are shuffled once so that every partition holds whole strata (Cox) or whole
 providers (logistic), with the features packed into one array column; Spark sorts each partition
 into the order the kernels work in, and that table is cached. So the order is computed once, when
-the working set is built, and no pass sorts or copies the rows again. Without strata the rows are
-spread over partitions by their row identifier (or by a hash of the row) and sorted by it.
-The number of partitions depends only on the number of rows and `rows_per_partition`, never on the
-size of the cluster, so the same data give the same partitions on 2 executors and on 10.
+the working set is built, and no pass sorts or copies the rows again. With strata or providers the
+number of partitions depends only on the number of rows and `rows_per_partition`, never on the size
+of the cluster, so the same data give the same partitions on 2 executors and on 10.
+
+Without strata no pass needs the rows in any order, and by default they stay in the input's own
+partitions: no shuffle and no sort (decision D-19). On request they are placed by row identifier
+in a chosen number of partitions and sorted by it, which costs a shuffle and repeats bit for bit.
 
 Jobs. One light job reads the columns other than the features: it counts the rows and refuses data
 that cannot be fitted. The working set is then built by the first pass that needs it, in the same
@@ -31,6 +34,7 @@ from . import kernels, timegrid
 from .dist import ship_package
 from .local import bounded_gamma
 from .newton import maximize
+from .record import execution_record
 
 ROWS_PER_PARTITION = 50_000
 MAX_HELD_ROWS = 200_000
@@ -551,6 +555,7 @@ class CoxModel:
     residuals: Any = None             # pandas: row_id, martingale; on request
     standardized: Any = None          # pandas, per stratum: observed, expected at the national baseline, indirect_ratio
     evaluation_seconds: List[float] = field(default_factory=list)   # each evaluation of the likelihood, in order
+    execution: Dict[str, Any] = field(default_factory=dict)         # what produced the digits: versions, libraries, layout
 
     @property
     def robust_standard_errors(self):
@@ -598,10 +603,16 @@ class CoxPH:
                     rows and with it the last bits of the result
     tol             the fit stops when the next Newton step is below tol standard errors
     rows_per_partition, partitions
-                    the working set has `partitions` partitions, by default the number of rows over
-                    `rows_per_partition`, rounded up: with strata and without. Without strata
-                    partitions="input" leaves the rows in the input's own partitions instead: no
-                    shuffle, but as many tasks as the input happens to have and no fixed order.
+                    with strata the working set has `partitions` partitions, by default the number
+                    of rows over `rows_per_partition`, rounded up. Without strata the rows stay in
+                    the input's own partitions by default (also partitions="input"): no shuffle, as
+                    many tasks per pass as the input has partitions, and results that repeat to
+                    rounding. A number, or "rows" for the number of rows over `rows_per_partition`,
+                    places them by row identifier in that many partitions and sorts them: a
+                    shuffle, and with `row_id` the same bits in every fit.
+
+    `execution` of the result is the record of what produced it (decision D-16): versions, the
+    libraries on the driver, the Arrow batch size and the layout.
 
     `seconds` of the result: "prepare" ends when the working set is built, which the first
     evaluation does (it is in "prepare"); "fit" is the evaluations after it. `evaluation_seconds`
@@ -623,8 +634,8 @@ class CoxPH:
             raise NotImplementedError("the robust variance and the standardized measures are implemented for Breslow ties only")
         if residuals and not row_id:
             raise ValueError("residuals need row_id, to say which row each belongs to")
-        if isinstance(partitions, str) and (partitions != "input" or strata):
-            raise ValueError('partitions must be a number, or "input" for a fit without strata')
+        if isinstance(partitions, str) and (partitions not in ("input", "rows") or strata):
+            raise ValueError('partitions must be a number, or "input" or "rows" for a fit without strata')
         self.max_times, self.baseline = max_times, baseline
         self.robust, self.want_residuals, self.want_standardized = robust, residuals, standardized
         self.time, self.event, self.features, self.strata = time, event, list(features), strata
@@ -689,8 +700,9 @@ class CoxPH:
         return sum(int(r["n"]) for r in groups), np.sort(np.asarray(values, dtype=np.float64))
 
     def _fit_time(self, frame) -> CoxModel:
-        """Without strata: the time grid. No pass needs the rows in any order; they are spread over
-        the partitions by row identifier and sorted by it so that every fit sums in the same order."""
+        """Without strata: the time grid. No pass needs the rows in any order, so by default they
+        stay where the input has them; on request they are spread over partitions by row identifier
+        and sorted by it, so that every fit sums in the same order."""
         from pyspark.sql import functions as F
 
         ship_package(frame.sparkSession)
@@ -699,11 +711,13 @@ class CoxPH:
         columns, scalars, conditions = self._columns(stratified=False)
         rows, grid = self._grid(frame.select(*scalars), conditions, has_entry)
         selected = frame.select(*columns)
-        if self.partitions == "input":
+        as_stored = self.partitions in (None, "input")
+        if as_stored:
             work = selected.persist()
             partitions = work.rdd.getNumPartitions()
         else:
-            partitions = self.partitions or max(1, math.ceil(rows / self.rows_per_partition))
+            partitions = (max(1, math.ceil(rows / self.rows_per_partition)) if self.partitions == "rows"
+                          else int(self.partitions))
             if self.row_id:
                 work = selected.repartition(partitions, "k").sortWithinPartitions("k").persist()
             else:
@@ -753,6 +767,7 @@ class CoxPH:
         finally:
             work.unpersist()
         mu, hazard = state["mu"], None
+        placed = "as in the input" if as_stored else ("by row_id" if self.row_id else "by a hash of the row")
         if self.baseline:
             import pandas as pd
 
@@ -763,10 +778,11 @@ class CoxPH:
         return CoxModel(self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"],
                         fit["evaluations"], fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="time grid", distinct_times=K, passes_per_evaluation=2,
-                                       rows_per_partition=None if self.partitions else self.rows_per_partition,
-                                       rows_placed="as in the input" if self.partitions == "input" else
-                                       ("by row_id" if self.row_id else "by a hash of the row")),
-                        {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds)
+                                       rows_per_partition=self.rows_per_partition if self.partitions == "rows" else None,
+                                       rows_placed=placed),
+                        {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds,
+                        execution=execution_record(frame.sparkSession, layout="time grid", partitions=partitions,
+                                                   rows_placed=placed, row_id=self.row_id))
 
     def _fit_strata(self, frame) -> CoxModel:
         from pyspark.sql import functions as F
@@ -820,7 +836,9 @@ class CoxPH:
                         fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="whole strata", rows_per_partition=self.rows_per_partition,
                                        passes_per_evaluation=1),
-                        {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds, **extra)
+                        {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds,
+                        execution=execution_record(spark, layout="whole strata", partitions=partitions,
+                                                   rows_per_partition=self.rows_per_partition, row_id=self.row_id), **extra)
 
     def _standardized(self, work, frame, p: int, beta: np.ndarray):
         """He and Schaubel's two-stage measure, as pprof_py computes it for a provider-stratified fit: the national
@@ -964,5 +982,8 @@ class LogisticFE:
             fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
             {"bound": self.bound, "provider": self.provider, "row_id": self.row_id, "tol_step_in_se": self.tol,
              "rows_per_partition": self.rows_per_partition},
-            seconds, evaluation_seconds=evaluation_seconds, providers=int(providers), bounded_low=int(low),
+            seconds, evaluation_seconds=evaluation_seconds,
+            execution=execution_record(spark, layout="whole providers", partitions=partitions,
+                                       rows_per_partition=self.rows_per_partition, row_id=self.row_id),
+            providers=int(providers), bounded_low=int(low),
             bounded_high=int(high), median_gamma=state["median"], provider_effects=effects)

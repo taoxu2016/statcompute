@@ -90,7 +90,7 @@ def test_a_report_reads_a_folder_of_several_rounds_round_by_round():
     ]
     records[2]["spark"]["slowest_task"] = {"stage": 3, "executor": "7", "executor_attached_s_before": 3.21, "gc_s": 1.5,
                                            "fetch_wait_s": 0.0, "locality": "ANY", "input_bytes": 20_000_000}
-    records[3]["warm_input"] = {"mode": "all", "seconds": 7.2, "rows": 100}
+    records[3]["warm_input"] = {"mode": "all", "seconds": 7.2, "rows": 100, "python_seconds": 3.4}
     records[0]["fit"]["extras"] = {"likelihood_calls": 11, "halved_steps": 6}       # the reference halved its last step
     by = {(c["adapter"], c["version"]): c for c in compare_records(records, reference="pprof_py")}
     assert set(by) == {("engine", "0.9.0"), ("engine", "0.10.0")}
@@ -108,6 +108,7 @@ def test_a_report_reads_a_folder_of_several_rounds_round_by_round():
     assert slow["prepare_s"] == 50.0 and slow["fit_s"] == 9.0 and slow["other_s"] == 1.0
     assert slow["first_evaluation_s"] == 48.0 and slow["later_evaluations_s"] == "3.1 2.9 3.0"
     assert slow["input_warmed"] is None and went[2]["input_warmed"] == "all in 7 s" and slow["task_input_gb"] == 0.02
+    assert slow["python_started"] is None and went[2]["python_started"] == "in 3 s"
     assert slow["slowest_task_s"] == 45.0 and slow["its_stage"] == "3: collect at spark.py:10" and slow["stage_tasks"] == 17
     assert slow["stage_median_task_s"] == 0.5 and slow["executors"] == 2 and slow["executors_seen"] == "9>10"
     assert slow["on_executor"] == "7" and slow["executor_attached_s_before"] == 3.2 and slow["task_gc_s"] == 1.5
@@ -124,6 +125,10 @@ def test_a_plan_can_have_the_stored_table_read_once_before_every_timed_spark_fit
         by = {r["adapter"]["name"]: r for r in records}
         assert by["lab_spark"]["status"] == "ok" and by["lab_spark"]["warm_input"]["mode"] == mode
         assert by["lab_spark"]["warm_input"]["rows"] == by["lab_spark"]["dataset"]["rows"] and by["lab_spark"]["warm_input"]["seconds"] > 0
+        # round 18 (decision D-20): the same step starts the Python workers, and they report their libraries (D-16)
+        started = by["lab_spark"]["warm_input"]
+        assert started["python_seconds"] > 0 and sum(found["tasks"] for found in started["executor_libraries"]) >= 8
+        assert all(found["numpy"] and found["python"] for found in started["executor_libraries"])
         assert by["lab_numpy"]["warm_input"] is None                      # a single-machine fit reads nothing through Spark
     assert run_plan(spark, dict(PLAN, adapters=["lab_spark"]), str(tmp_path / "data"), str(tmp_path / "plain"))[0]["warm_input"] is None
 
@@ -142,6 +147,17 @@ def test_every_plan_in_the_repository_loads_under_its_own_name():
         assert all(family in plan["models"] for family in {d["family"] for d in plan["datasets"]})
     assert load_plan("compare_5m_warm")["options"]["warm_input"] == "all"
     assert load_plan("unstratified_5m_warm_input")["options"]["engine_partitions"] == "input"
+
+
+def test_the_executors_report_their_libraries(spark):
+    """Round 18: the executors' side of the execution record, by the job that also starts their Python workers."""
+    import numpy
+
+    from statcompute.engine import executor_libraries
+
+    found = executor_libraries(spark, tasks=4, hold_seconds=0.0)
+    assert sum(entry["tasks"] for entry in found) == 4 and found[0]["numpy"] == numpy.__version__
+    assert set(found[0]) >= {"python", "numpy", "pandas", "pyarrow", "blas", "tasks"}
 
 
 def test_the_memory_guard_skips_a_fit_that_would_not_fit_the_driver(spark, tmp_path):

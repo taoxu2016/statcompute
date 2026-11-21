@@ -1,6 +1,6 @@
 {
  "name": "compare_5m_warm",
- "description": "compare_5m for the Spark implementations only, four repeats, with the stored table read once before every timed fit (warm_input, decision D-18): timings clear of the first read of a file by an executor.",
+ "description": "compare_5m for the Spark implementations only, four repeats, with the stored table read and the Python workers started before every timed fit (decisions D-18 and D-20): timings clear of what a new executor does first.",
  "datasets": [
   {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
   {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},

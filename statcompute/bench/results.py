@@ -125,7 +125,8 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     from version 0.12.0 on also say which executor ran that task, how long it had been attached
     when the task started, how much it read from storage, and how much of it was garbage
     collection or waiting for shuffle data. `input_warmed` says whether the plan had the stored
-    table read once before the timed call."""
+    table read once before the timed call, and `python_started` what starting the executors'
+    Python workers took there (from version 0.16.0)."""
     out = []
     for r in records:
         timing, spark = r.get("timing") or {}, r.get("spark") or {}
@@ -162,7 +163,8 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                "executors": low if low == high else f"{low}-{high}",
                "executors_seen": ">".join(seen[:12]) + ("..." if len(seen) > 12 else ""),
                "input_warmed": None if not warmed else (f"{warmed.get('mode')}: failed" if "error" in warmed
-                                                        else f"{warmed.get('mode')} in {warmed.get('seconds', 0):.0f} s")}
+                                                        else f"{warmed.get('mode')} in {warmed.get('seconds', 0):.0f} s"),
+               "python_started": None if warmed.get("python_seconds") is None else f"in {warmed['python_seconds']:.0f} s"}
         out.append(row)
     return out
 

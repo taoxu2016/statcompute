@@ -30,7 +30,7 @@ class Engine(Adapter):
         if self.options.get("engine_rows_per_partition"):
             options["rows_per_partition"] = int(self.options["engine_rows_per_partition"])
         if model.family == COX:
-            if not model.strata and self.options.get("engine_partitions"):     # a number, or "input": the layout before round 12
+            if not model.strata and self.options.get("engine_partitions"):     # "input" (the default), a number, or "rows"
                 options["partitions"] = self.options["engine_partitions"]
             fitted = CoxPH("time", "event", names, "provider" if model.strata else None, ties=model.ties,
                            **options).fit(frame)
@@ -45,7 +45,8 @@ class Engine(Adapter):
                 extras["flags"] = flag_summary(fitted.provider_effects, key="provider", level=0.95)
         extras.update(evaluations=fitted.evaluations, newton_step_in_se=fitted.newton_step_in_se,
                       partitions=fitted.partitions, events=fitted.events,
-                      evaluation_seconds=[round(s, 3) for s in fitted.evaluation_seconds])
+                      evaluation_seconds=[round(s, 3) for s in fitted.evaluation_seconds],
+                      execution=fitted.execution)
         return FitResult(names, [float(v) for v in fitted.coefficients], [float(v) for v in fitted.standard_errors],
                          fitted.log_likelihood, int(fitted.iterations), bool(fitted.converged),
                          {k: v for k, v in fitted.settings.items() if v is not None}, dict(fitted.seconds), extras)

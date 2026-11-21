@@ -83,13 +83,17 @@ def static(spark) -> Dict[str, Any]:
 
 
 def warm_input(spark, dataset, mode: str = "all") -> Dict[str, Any]:
-    """Read the stored table once before a timed fit, so that no executor meets one of its files for
-    the first time inside the fit: on the standard cluster such a first read stalls one task for 17
-    to 21 seconds (OPEN_ITEMS.md, OI-31). `mode` "footers" counts the rows, which opens every file;
-    "all" reads every column of every row. Returns the mode, the seconds it took and the rows seen.
+    """Before a timed fit (decisions D-18 and D-20): read the stored table once, so that no executor
+    meets one of its files for the first time inside the fit, and start the Python workers, so that
+    no executor runs its first Python task there. On the standard cluster the first costs one task
+    17 to 21 seconds and the second 6.5 to 10.5 (OPEN_ITEMS.md, OI-31). `mode` "footers" counts the
+    rows, which opens every file; "all" reads every column of every row. Returns the mode, the rows
+    seen, the seconds of the read, the seconds of the Python start and the libraries the executors
+    reported, which is their part of the execution record (D-16).
 
-    This changes what a timing means. The fit is then measured from a table the executors have
-    already read, as a job on a long-running cluster would find it, and no longer from a cold one."""
+    This changes what a timing means. The fit is then measured on executors that have read the
+    table and run Python, as a job on a long-running cluster would find them, and no longer on
+    new ones."""
     from pyspark.sql import functions as F
 
     mode = "footers" if str(mode) == "footers" else "all"
@@ -99,7 +103,15 @@ def warm_input(spark, dataset, mode: str = "all") -> Dict[str, Any]:
         rows = frame.count()
     else:
         rows = frame.select(F.xxhash64(*frame.columns).alias("h")).agg(F.count("*").alias("n"), F.max("h")).first()["n"]
-    return {"mode": mode, "seconds": time.perf_counter() - started, "rows": int(rows)}
+    out = {"mode": mode, "seconds": time.perf_counter() - started, "rows": int(rows)}
+    try:
+        from ..engine.record import timed_executor_libraries
+
+        python = timed_executor_libraries(spark)
+        out.update(python_seconds=python["seconds"], executor_libraries=python["libraries"])
+    except Exception as failure:
+        out.update(python_seconds=None, executor_libraries=None, python_error=f"{type(failure).__name__}: {failure}"[:300])
+    return out
 
 
 def moving(spark) -> Dict[str, Any]:

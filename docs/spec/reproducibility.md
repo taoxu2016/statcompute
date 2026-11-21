@@ -3,8 +3,8 @@
 Decision D-14 (the maintainer's, 2026-11-20): bitwise reproducibility is not an absolute requirement; agreement
 within strict numerical tolerances, together with stable provider-level flags and auditable execution
 configurations, may be sufficient. This document proposes what the three conditions mean and says what exists
-today. Sections 2 and 3 are decisions D-15 and D-16, approved on 2026-11-21. Section 3 is not implemented in full
-(OI-29). Evidence is from the assistant's sandbox unless a cluster is named.
+today. Sections 2 and 3 are decisions D-15 and D-16, approved on 2026-11-21. Evidence is from the assistant's
+sandbox unless a cluster is named.
 
 ## 1. Strict numerical tolerances: in place
 
@@ -70,12 +70,14 @@ What must be kept with a fit so that someone else can say what produced its digi
 | The layout | Partitions, rows per partition, how rows are placed, passes per evaluation; from round 13 the Arrow batch size | Nothing |
 | Spark | Version, application, Databricks runtime and node types, 18 settings, the executors attached before, during and after the fit | Nothing |
 | Numerical libraries on the driver | Python, NumPy, pandas, pyarrow, SciPy; from round 13 the BLAS library, its version and threading | Nothing |
-| Numerical libraries on the executors | Nothing | Python, NumPy and BLAS where the kernels run: this needs a pass over the executors (OI-29) |
+| Numerical libraries on the executors | From round 18, when the plan sets `warm_input`: every distinct set of Python, NumPy, pandas, pyarrow, SciPy and BLAS the executors report, by the job that starts their Python workers (D-20) | For a plan without `warm_input`: nothing |
 | Convergence | Iterations, evaluations, the last Newton step in standard errors, each evaluation's seconds | Nothing |
 | The outcome | Coefficients, standard errors, log-likelihood; from round 13 the flag summary | Provider tables themselves, which stay out of records |
 
-A fit made outside the harness carries its settings and its partitions and nothing else. The proposal is that the
-engine attach the whole record to the model it returns, so that the audit trail does not depend on the harness.
+From round 18 the engine attaches the record to the model it returns, as `execution`, so that the audit trail does not
+depend on the harness: the versions of the package and of Spark, the driver's libraries and BLAS, the Arrow batch size,
+and the layout. The executors' libraries are not asked for during a fit, which would cost a job;
+`statcompute.engine.executor_libraries(spark)` returns them when the caller wants them in the record.
 
 ## 4. What still repeats bit for bit
 

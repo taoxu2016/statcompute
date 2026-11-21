@@ -48,6 +48,8 @@ def test_cox_on_spark_repeats_bit_for_bit_and_takes_strata_of_any_type(survival)
     moved = CoxPH("time", "event", FEATURES, "provider", row_id="id", rows_per_partition=2500).fit(frame.repartition(5))
     assert np.array_equal(first.coefficients, moved.coefficients) and first.log_likelihood == moved.log_likelihood
     assert len(first.evaluation_seconds) == first.evaluations
+    assert first.execution["layout"] == "whole strata" and first.execution["partitions"] == 3 and first.execution["row_id"] == "id"
+    assert first.execution["statcompute"] and first.execution["spark"] == frame.sparkSession.version
 
 
 def test_cox_on_spark_agrees_with_pprof_py(survival):
