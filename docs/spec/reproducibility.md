@@ -67,12 +67,15 @@ What must be kept with a fit so that someone else can say what produced its digi
 | The data | Dataset identifier, its specification, rows, and the manifest's checksum | Nothing for synthetic data. For other tables: a checksum of the caller's choosing |
 | The package | Adapter name, version, and for the references the commit and whether it is the pinned one | The engine's commit: the version only |
 | The estimator's settings | Every option passed (`fit.settings`): ties, strata, tolerance, the row identifier | Nothing |
-| The layout | Partitions, rows per partition, how rows are placed, passes per evaluation; from round 13 the Arrow batch size | Nothing |
+| The layout | Partitions, rows per partition, how rows are placed, passes per evaluation; from round 13 the Arrow batch size; from round 22 the rule that gave the number of partitions and the cluster's cores at that moment, since the default now follows the cluster (D-21) | Nothing |
 | Spark | Version, application, Databricks runtime and node types, 18 settings, the executors attached before, during and after the fit | Nothing |
 | Numerical libraries on the driver | Python, NumPy, pandas, pyarrow, SciPy; from round 13 the BLAS library, its version and threading | Nothing |
 | Numerical libraries on the executors | From round 18, when the plan sets `warm_input`: every distinct set of Python, NumPy, pandas, pyarrow, SciPy and BLAS the executors report, by the job that starts their Python workers (D-20) | For a plan without `warm_input`: nothing |
 | Convergence | Iterations, evaluations, the last Newton step in standard errors, each evaluation's seconds | Nothing |
 | The outcome | Coefficients, standard errors, log-likelihood; from round 13 the flag summary | Provider tables themselves, which stay out of records |
+
+To repeat a fit's digits one needs its number of partitions, which by default depends on the cluster it ran on:
+`partitions=<the number in the record>` gives the same layout anywhere.
 
 From round 18 the engine attaches the record to the model it returns, as `execution`, so that the audit trail does not
 depend on the harness: the versions of the package and of Spark, the driver's libraries and BLAS, the Arrow batch size,

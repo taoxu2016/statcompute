@@ -1,4 +1,4 @@
-# The engine: specification, version 0.7
+# The engine: specification, version 0.8
 
 `statcompute.engine` is the new implementation of the two case studies. This document says what
 it estimates, how it computes, what has been verified and what is missing. Evidence is from the
@@ -146,9 +146,18 @@ providers.
   and Spark sorts every partition into the order the kernel works in: stratum, time descending, row
   identifier for Cox; provider, row identifier for the logistic model. The features are packed into
   one array column and the table is cached. So the order is computed once and stored, and no pass
-  sorts, factorizes or copies its rows again. There are ceil(rows / `rows_per_partition`)
-  partitions, 50,000 rows each by default, unless `partitions` is given: a number that depends on
-  the data and the settings only, not on the executors attached or on the input's files.
+  sorts, factorizes or copies its rows again.
+- **How many partitions, with strata or providers** (decision D-21). By default one for every core
+  the cluster has when the fit starts, so that a pass has a task for each core and no more; and
+  more than that only when a partition would otherwise hold over 200 MB of features (rows times
+  features times 8 bytes), in which case there are as many as that limit asks for. A pass costs for
+  its tasks as well as for its rows: at 5 million rows on 40 cores, 40 tasks made an evaluation 17
+  to 28 percent shorter than 100, and 20 were no better than 100
+  (`docs/reports/2026-11-21-databricks-partition-size.md`). The default layout therefore follows
+  the cluster. `partitions`, or `rows_per_partition` (ceil(rows / `rows_per_partition`)
+  partitions), fixes it by the data and the settings alone, whatever the executors attached or the
+  input's files; until version 0.7 that was the default, at 50,000 rows. The model's settings and
+  its `execution` say which rule gave the number, and the cores.
 - **The working set without strata** (decision D-19). By default the rows stay in the input's own
   partitions: no shuffle and no sort, as many tasks per pass as the input has partitions. On request
   they are placed by row identifier (by a hash of the whole row when no `row_id` is given) and sorted
@@ -170,21 +179,24 @@ providers.
   the first evaluation, because it is the pass that builds the working set; `seconds["fit"]` is the
   evaluations after it. For the logistic model the scan builds it, and "fit" is every evaluation.
   `evaluation_seconds` has each evaluation's time, the first included.
-- **Memory.** The kernels run in Python workers, outside the executors' JVM heap. One partition of
-  50,000 rows and 180 features is 72 MB as a matrix, several times that at the peak of a pass.
+- **Memory.** The kernels run in Python workers, outside the executors' JVM heap. A partition is at
+  most 200 MB of features by default, several times that at the peak of a pass, and an executor
+  runs one worker per core. Partitions of 200 MB have run on the cluster two to an executor, and of
+  100 MB four to an executor; 200 MB on every core at once has not (OI-41).
   Without strata a worker holds one Arrow batch at a time, and every partition returns its pass-1
   tables to the driver: 100 partitions of 1.5 MB at 5 million rows, 100 features and 1,825 days.
 - **Stopping.** Newton's method stops when the next step is below `tol` standard errors in every
   coefficient (class T_CONV, default 1e-8), and reports that number.
 - **Reproducibility.** With strata or providers and `row_id`, two fits of the same data with the
-  same settings return identical bits, however the input is partitioned (tested for Cox, also from
-  a repartitioned input). Without strata that holds for the layout by row identifier, which must be
-  asked for; with the default, the input's partitions, fits agree to rounding (1e-9 standard errors,
-  tested). What must stay the same for identical bits: `rows_per_partition` or `partitions`; without
-  strata also the Arrow batch size, since the sums run batch by batch, and tables small enough to be
-  added on the driver; NumPy and its BLAS. The layout does not depend on the number of executors,
-  so neither should the bits; that has been tested in local mode only. Without `row_id`, across
-  layouts or across BLAS builds, results agree to rounding, not bit for bit. This is weaker than
+  same number of partitions return identical bits, however the input is partitioned (tested for
+  Cox, also from a repartitioned input). By default the number of partitions follows the cluster's
+  cores, so that holds between fits on the same number of cores; to have it whatever the cluster,
+  give `rows_per_partition` or `partitions`. Without strata it holds for the layout by row
+  identifier, which must be asked for; with the default, the input's partitions, fits agree to
+  rounding. Across numbers of partitions, without `row_id`, or across BLAS builds, results agree to
+  rounding (1e-9 standard errors, tested), not bit for bit. What else must stay the same for
+  identical bits: without strata the Arrow batch size, since the sums run batch by batch, and
+  tables small enough to be added on the driver; NumPy and its BLAS. This is weaker than
   pprof_spark's guarantee. By decision D-14 bitwise identity is not an absolute requirement;
   `docs/spec/reproducibility.md` says what stands in its place.
 - **The package on the executors.** The package's code travels inside the function of every task:
@@ -234,7 +246,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 125 tests. In the sandbox of 2026-11-21 (no R installed) 122 pass and the 3
+The repository has 126 tests. In the sandbox of 2026-11-21 (no R installed) 123 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5
@@ -295,8 +307,10 @@ features, 14.4 to 16.4 and 19.9 for the logistic model at 50 and 100, and withou
 0.7 of this specification. How many partitions a pass should have was measured there on
 2026-11-21 (`docs/reports/2026-11-21-databricks-partition-size.md`): at 5 million rows on 40 cores,
 40 tasks per pass made later evaluations 17 to 28 percent shorter than the 100 of the default, and
-20 were no better than 100. Decision D-21 proposes one partition per core as the default; this
-version still has 50,000 rows per partition. Version 0.7 has run on the cluster with strata and with providers
+20 were no better than 100. Decision D-21, approved the same day, makes one partition per core the
+default: version 0.8 of this specification, which has not run on a cluster as the default; the
+layout it gives at 5 million rows on 40 cores has, as 125,000 rows per partition. Version 0.7 has
+run on the cluster with strata and with providers
 (`compare_5m_warm`, 2026-11-21, with every other implementation in one session): whole calls of
 19.7 and 19.8 seconds for Cox at 50 and 100 features and 15.0 and 19.0 for the logistic model by
 medians of four, 1.8 to 4.6 times shorter than pprof_spark's at its pinned build `b92919c`. Without strata it has not run there;

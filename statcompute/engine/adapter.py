@@ -8,7 +8,7 @@ from ..testkit.specs import COX
 
 class Engine(Adapter):
     name, kind, role = "engine", "spark", "engine"
-    rows_per_partition = None                              # None: the engine's own default
+    rows_per_partition = None                              # None: the engine's own default, one partition per core (D-21)
 
     def describe(self, spark=None):
         return {"name": self.name, "kind": self.kind, "role": self.role, "version": __version__,
@@ -54,10 +54,16 @@ class Engine(Adapter):
                          {k: v for k, v in fitted.settings.items() if v is not None}, dict(fitted.seconds), extras)
 
 
+class Engine50k(Engine):
+    """The engine with 50,000 rows per partition, its default until version 0.19.0: at 5 million
+    rows, 100 tasks per pass. Kept to set beside the default of decision D-21."""
+    name, rows_per_partition = "engine_50k", 50_000
+
+
 class Engine125k(Engine):
-    """The engine with 125,000 rows per partition instead of 50,000: at 5 million rows, 40 tasks per
-    pass instead of 100. Beside `engine` in one plan it shows what a task costs on a cluster apart
-    from its rows (OPEN_ITEMS OI-25)."""
+    """The engine with 125,000 rows per partition: at 5 million rows, 40 tasks per pass. Beside
+    the others in one plan it shows what a task costs on a cluster apart from its rows (OPEN_ITEMS
+    OI-25)."""
     name, rows_per_partition = "engine_125k", 125_000
 
 
@@ -67,5 +73,6 @@ class Engine250k(Engine):
 
 
 register("engine", Engine)
+register("engine_50k", Engine50k)
 register("engine_125k", Engine125k)
 register("engine_250k", Engine250k)

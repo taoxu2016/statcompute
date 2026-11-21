@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-21, version 0.19.0 (round 21: on the cluster the package sent by value works without a restart, and one
-task per core is the fastest size of partition tried; D-21 proposes it as the default).
+Updated 2026-11-21, version 0.20.0 (round 22: D-21 approved and implemented: with strata or providers, one partition
+per core by default).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass.
 
 ## First cluster run, 2026-11-16
 
@@ -294,10 +294,26 @@ The maintainer ran `engine_partitions_5m_warm` with version 0.18.0 on the cluste
 
 Round 21 changes one thing in the code: the report's list of builds says how each record's code reached the executors.
 
+## Round 22 (2026-11-21): D-21 approved and implemented
+
+The maintainer approved D-21 on 2026-11-21.
+
+| Part | State |
+|---|---|
+| The default number of partitions with strata or providers | One for every core the cluster has when the fit starts; more only when a partition would otherwise hold over 200 MB of features, and then as many as that limit asks for. At 5 million rows on 40 cores: 40, which is what ran on the cluster as `engine_125k` |
+| A layout that does not depend on the cluster | As before, by `partitions` or `rows_per_partition`. With `row_id` such fits repeat bit for bit on any cluster; with the default they do between fits on the same number of cores, and agree to rounding otherwise |
+| What a fit records | The rule that gave the number of partitions ("one per core", "by size", "rows per partition", "given") and the cores, in the model's settings and its `execution` |
+| Adapters and plans | `engine_50k` is the default of versions up to 0.19.0, kept for comparison. `engine_partitions_5m_warm` runs the default beside 50,000, 125,000 and 250,000 rows per partition. In `compare_5m_warm` the prototype now has 125,000 rows per partition, so that it too has one task per core at 5 million rows |
+| Without strata | Unchanged: the input's partitions (D-19). Whether a task per core pays there too is OI-39 |
+
+Not run on a cluster as the default. Untried there as well: partitions of 200 MB on every core of an executor at
+once, which larger data will give (OI-41).
+
 ## What has not happened
 
 - No run on Databricks of the engine and its prototype, or of the engine and pprof_spark, at one task per core in one
-  session: the sizes of partition were compared for the engine alone.
+  session: the sizes of partition were compared for the engine alone. Version 0.20.0, in which it is the default, has
+  not run there.
 - No measurement of what an evaluation costs apart from its tasks and its rows (OI-40).
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
@@ -308,13 +324,13 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. The maintainer's ruling on D-21.
-2. Then: the default implemented; one session of `compare_5m_warm` with every implementation at it; and without strata
-   a task per core tried against the input's partitions (OI-39).
-3. What an evaluation costs when it does nothing (OI-40).
-4. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
-5. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
-6. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20).
+1. One session of `compare_5m_warm` with version 0.20.0: every implementation, the engine and its prototype at one task
+   per core (OI-35). No restart is needed after pulling.
+2. Without strata, a task per core against the input's partitions (OI-39); what an evaluation costs when it does
+   nothing (OI-40).
+3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
+4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+5. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20).
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

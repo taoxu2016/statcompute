@@ -1,6 +1,6 @@
 {
  "name": "compare_5m_warm",
- "description": "compare_5m for the Spark implementations only, four repeats, with the stored table read and the Python workers started before every timed fit (decisions D-18 and D-20): timings clear of what a new executor does first.",
+ "description": "compare_5m for the Spark implementations only, four repeats, with the stored table read and the Python workers started before every timed fit (decisions D-18 and D-20): timings clear of what a new executor does first. From round 22 the prototype lab_spark has 125,000 rows per partition, so that at 5 million rows it has one task per core as the engine has by default (decision D-21).",
  "datasets": [
   {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
   {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
@@ -13,5 +13,5 @@
  },
  "adapters": ["engine", "lab_spark", "pprof_spark", "pprof_spark_cached"],
  "repeats": 4,
- "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all"}
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "lab_rows_per_partition": 125000}
 }

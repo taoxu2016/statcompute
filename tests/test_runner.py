@@ -147,6 +147,8 @@ def test_every_plan_in_the_repository_loads_under_its_own_name():
         assert all(family in plan["models"] for family in {d["family"] for d in plan["datasets"]})
     assert load_plan("compare_5m_warm")["options"]["warm_input"] == "all"
     assert load_plan("unstratified_5m_warm_input")["options"]["engine_partitions"] == "input"
+    assert load_plan("engine_partitions_5m_warm")["adapters"] == ["engine", "engine_50k", "engine_125k", "engine_250k"]
+    assert load_plan("compare_5m_warm")["options"]["lab_rows_per_partition"] == 125000
 
 
 def test_the_executors_report_their_libraries(spark):
@@ -190,7 +192,8 @@ def test_the_report_judges_the_pin_when_it_is_made_and_lists_the_builds_that_ran
 
 def test_the_engine_has_adapters_with_larger_partitions(spark, tmp_path):
     """Round 19: the same engine at other rows per partition, side by side in one plan (OI-25)."""
-    assert {"engine", "engine_125k", "engine_250k"} <= set(adapters.names())
+    assert {"engine", "engine_50k", "engine_125k", "engine_250k"} <= set(adapters.names())
+    assert adapters.get("engine_50k").rows_per_partition == 50_000
     assert adapters.get("engine_125k").rows_per_partition == 125_000 and adapters.get("engine").rows_per_partition is None
     plan = dict(PLAN, adapters=["engine", "engine_125k"])
     records = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))

@@ -3,9 +3,12 @@
 Layout. The rows are shuffled once so that every partition holds whole strata (Cox) or whole
 providers (logistic), with the features packed into one array column; Spark sorts each partition
 into the order the kernels work in, and that table is cached. So the order is computed once, when
-the working set is built, and no pass sorts or copies the rows again. With strata or providers the
-number of partitions depends only on the number of rows and `rows_per_partition`, never on the size
-of the cluster, so the same data give the same partitions on 2 executors and on 10.
+the working set is built, and no pass sorts or copies the rows again. With strata or providers
+there is by default one partition for every core the cluster has when the fit starts, and more only
+when a partition would otherwise hold more than PARTITION_BYTES of features (decision D-21): a pass
+costs for its tasks as well as for its rows. Given `rows_per_partition` or `partitions`, the number
+depends on the data and the settings alone, and the same data give the same partitions on 2
+executors and on 10.
 
 Without strata no pass needs the rows in any order, and by default they stay in the input's own
 partitions: no shuffle and no sort (decision D-19). On request they are placed by row identifier
@@ -40,13 +43,34 @@ from .record import execution_record
 # The kernels as namespaces of functions: what a task carries to an executor holds no module object (see dist.py).
 kernels, timegrid = functions_of(_kernels), functions_of(_timegrid)
 
-ROWS_PER_PARTITION = 50_000
+ROWS_PER_PARTITION = 50_000         # without strata, for partitions="rows" when no rows_per_partition is given
+PARTITION_BYTES = 200_000_000       # of features (rows x features x 8) in one partition, with strata or providers
 MAX_HELD_ROWS = 200_000
 MAX_TIMES = 20_000
 DRIVER_TABLES = 768 * 2 ** 20       # pass-1 tables of the time grid beyond this many bytes are added on the executors first
 PARTIAL = "ll double, u binary, i binary, n long, e double, g binary, bad long"
 SCAN = "n long, providers long, low long, high long, held long, e double, bad long, m binary"
 TABLES = "t binary, m binary, bad long"
+
+
+def working_partitions(spark, rows: int, features: int, partitions: Optional[int] = None,
+                       rows_per_partition: Optional[int] = None):
+    """How many partitions a working set with strata or providers gets, the rule that gave the
+    number, and the cluster's cores at this moment (decision D-21).
+
+    Given `partitions`, that many. Given `rows_per_partition`, the rows over it, rounded up: both
+    depend on the data and the settings alone. Otherwise one partition for every core, so that a
+    pass has a task for each and no more; and more partitions than cores only when one would
+    otherwise hold more than PARTITION_BYTES of features. On the cluster 40 tasks on 40 cores made
+    an evaluation 17 to 28 percent shorter than 100 tasks, and 20 tasks were no better than 100
+    (docs/reports/2026-11-21-databricks-partition-size.md)."""
+    cores = int(spark.sparkContext.defaultParallelism)
+    if partitions:
+        return int(partitions), "given", cores
+    if rows_per_partition:
+        return max(1, math.ceil(rows / int(rows_per_partition))), "rows per partition", cores
+    by_size = math.ceil(rows * max(1, features) * 8 / PARTITION_BYTES)
+    return max(1, cores, by_size), ("one per core" if cores >= by_size else "by size"), cores
 
 
 # ---------------------------------------------------------------- inside the Python workers
@@ -607,13 +631,17 @@ class CoxPH:
                     rows and with it the last bits of the result
     tol             the fit stops when the next Newton step is below tol standard errors
     rows_per_partition, partitions
-                    with strata the working set has `partitions` partitions, by default the number
-                    of rows over `rows_per_partition`, rounded up. Without strata the rows stay in
-                    the input's own partitions by default (also partitions="input"): no shuffle, as
-                    many tasks per pass as the input has partitions, and results that repeat to
-                    rounding. A number, or "rows" for the number of rows over `rows_per_partition`,
-                    places them by row identifier in that many partitions and sorts them: a
-                    shuffle, and with `row_id` the same bits in every fit.
+                    with strata the working set has by default one partition for every core of the
+                    cluster at the start of the fit, and more only when a partition would hold over
+                    200 MB of features; so the layout follows the cluster, and fits on clusters of
+                    different size agree to rounding. `partitions`, or `rows_per_partition` (the
+                    number of rows over it, rounded up), fixes the layout whatever the cluster, and
+                    with `row_id` the bits. Without strata the rows stay in the input's own
+                    partitions by default (also partitions="input"): no shuffle, as many tasks per
+                    pass as the input has partitions, and results that repeat to rounding. A
+                    number, or "rows" for the number of rows over `rows_per_partition` (50,000 when
+                    not given), places them by row identifier in that many partitions and sorts
+                    them: a shuffle, and with `row_id` the same bits in every fit.
 
     `execution` of the result is the record of what produced it (decision D-16): versions, the
     libraries on the driver, the Arrow batch size and the layout.
@@ -626,7 +654,7 @@ class CoxPH:
     def __init__(self, time: str, event: str, features: Sequence[str], strata: str, *, ties: str = "breslow",
                  entry: Optional[str] = None, weights: Optional[str] = None, offset: Optional[str] = None,
                  row_id: Optional[str] = None, tol: float = 1e-8, max_iterations: int = 50,
-                 rows_per_partition: int = ROWS_PER_PARTITION, partitions: Any = None,
+                 rows_per_partition: Optional[int] = None, partitions: Any = None,
                  max_times: int = MAX_TIMES, baseline: bool = False, robust: bool = False, residuals: bool = False,
                  standardized: bool = False):
         if ties not in ("breslow", "efron"):
@@ -720,7 +748,7 @@ class CoxPH:
             work = selected.persist()
             partitions = work.rdd.getNumPartitions()
         else:
-            partitions = (max(1, math.ceil(rows / self.rows_per_partition)) if self.partitions == "rows"
+            partitions = (max(1, math.ceil(rows / (self.rows_per_partition or ROWS_PER_PARTITION))) if self.partitions == "rows"
                           else int(self.partitions))
             if self.row_id:
                 work = selected.repartition(partitions, "k").sortWithinPartitions("k").persist()
@@ -782,7 +810,7 @@ class CoxPH:
         return CoxModel(self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"],
                         fit["evaluations"], fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="time grid", distinct_times=K, passes_per_evaluation=2,
-                                       rows_per_partition=self.rows_per_partition if self.partitions == "rows" else None,
+                                       rows_per_partition=(self.rows_per_partition or ROWS_PER_PARTITION) if self.partitions == "rows" else None,
                                        rows_placed=placed),
                         {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds,
                         execution=execution_record(frame.sparkSession, layout="time grid", partitions=partitions,
@@ -797,7 +825,7 @@ class CoxPH:
         p = len(self.features)
         columns, scalars, conditions = self._columns(stratified=True)
         rows = _check(frame.select(*scalars), conditions)
-        partitions = self.partitions or max(1, math.ceil(rows / self.rows_per_partition))
+        partitions, rule, cores = working_partitions(spark, rows, p, self.partitions, self.rows_per_partition)
         order = ["s", F.desc("t")] + (["k"] if self.row_id else [])        # the kernel's order, computed once
         work = frame.select(*columns).repartition(partitions, "s").sortWithinPartitions(*order).persist()
         try:
@@ -839,10 +867,10 @@ class CoxPH:
         return CoxModel(self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"], fit["evaluations"], fit["converged"],
                         fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="whole strata", rows_per_partition=self.rows_per_partition,
-                                       passes_per_evaluation=1),
+                                       partitions_from=rule, passes_per_evaluation=1),
                         {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds,
-                        execution=execution_record(spark, layout="whole strata", partitions=partitions,
-                                                   rows_per_partition=self.rows_per_partition, row_id=self.row_id,
+                        execution=execution_record(spark, layout="whole strata", partitions=partitions, partitions_from=rule,
+                                                   cores=cores, rows_per_partition=self.rows_per_partition, row_id=self.row_id,
                                                    code_sent=shipped), **extra)
 
     def _standardized(self, work, frame, p: int, beta: np.ndarray):
@@ -886,7 +914,7 @@ class LogisticFE:
     def __init__(self, outcome: str, features: Sequence[str], provider: str, *, bound: float = 10.0,
                  row_id: Optional[str] = None, tol: float = 1e-8, max_iterations: int = 50,
                  provider_effects: bool = True, level: float = 0.95, direct: bool = False,
-                 rows_per_partition: int = ROWS_PER_PARTITION, partitions: Optional[int] = None):
+                 rows_per_partition: Optional[int] = None, partitions: Optional[int] = None):
         self.level, self.direct = level, direct
         self.outcome, self.features, self.provider = outcome, list(features), provider
         self.bound, self.row_id, self.tol, self.max_iterations = bound, row_id, tol, max_iterations
@@ -908,7 +936,7 @@ class LogisticFE:
             columns.append(F.col(self.row_id).cast("double").alias("k"))
         rows = _check(frame.select(*scalars), {"missing value": F.col("s").isNull() | F.col("y").isNull(),
                                                "outcome not 0 or 1": ~F.col("y").isin(0.0, 1.0)})
-        partitions = self.partitions or max(1, math.ceil(rows / self.rows_per_partition))
+        partitions, rule, cores = working_partitions(spark, rows, p, self.partitions, self.rows_per_partition)
         keys = ["s"] + (["k"] if self.row_id else [])                      # the kernel's order, computed once
         work = frame.select(*columns).repartition(partitions, "s").sortWithinPartitions(*keys).persist()
         try:
@@ -986,9 +1014,9 @@ class LogisticFE:
             self.features, fit["beta"], fit["covariance"], fit["loglik"], fit["iterations"], fit["evaluations"],
             fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
             {"bound": self.bound, "provider": self.provider, "row_id": self.row_id, "tol_step_in_se": self.tol,
-             "rows_per_partition": self.rows_per_partition},
+             "rows_per_partition": self.rows_per_partition, "partitions_from": rule},
             seconds, evaluation_seconds=evaluation_seconds,
-            execution=execution_record(spark, layout="whole providers", partitions=partitions,
+            execution=execution_record(spark, layout="whole providers", partitions=partitions, partitions_from=rule, cores=cores,
                                        rows_per_partition=self.rows_per_partition, row_id=self.row_id, code_sent=shipped),
             providers=int(providers), bounded_low=int(low),
             bounded_high=int(high), median_gamma=state["median"], provider_effects=effects)

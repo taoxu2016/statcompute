@@ -52,6 +52,36 @@ def test_cox_on_spark_repeats_bit_for_bit_and_takes_strata_of_any_type(survival)
     assert first.execution["statcompute"] and first.execution["spark"] == frame.sparkSession.version
 
 
+def test_by_default_a_working_set_has_one_partition_per_core_and_more_only_for_size(spark, data_root, survival, monkeypatch):
+    """Decision D-21: a pass costs for its tasks, so by default it has a task for every core and no more;
+    a partition that would hold too many bytes of features is cut. Explicit settings fix the layout as before."""
+    from statcompute.engine import spark as engine
+
+    frame, _ = survival
+    cores = spark.sparkContext.defaultParallelism
+    assert engine.working_partitions(spark, 5_000_000, 100) == (max(cores, 20), "one per core" if cores >= 20 else "by size", cores)
+    assert engine.working_partitions(spark, 100_000_000, 180)[:2] == (720, "by size")            # 144 GB of features in 200 MB
+    assert engine.working_partitions(spark, 5_000_000, 100, rows_per_partition=50_000)[:2] == (100, "rows per partition")
+    assert engine.working_partitions(spark, 5_000_000, 100, partitions=7, rows_per_partition=50_000)[:2] == (7, "given")
+
+    default = CoxPH("time", "event", FEATURES, "provider", row_id="id").fit(frame)
+    assert default.partitions == cores and default.settings["partitions_from"] == "one per core" and default.settings["rows_per_partition"] is None
+    assert default.execution["cores"] == cores and default.execution["partitions"] == cores
+    fixed = CoxPH("time", "event", FEATURES, "provider", row_id="id", rows_per_partition=2500).fit(frame)
+    assert fixed.partitions == 3 and fixed.settings["partitions_from"] == "rows per partition"
+    assert np.max(np.abs(default.coefficients - fixed.coefficients) / fixed.standard_errors) < 1e-9
+
+    logistic_frame = materialize(spark, DatasetSpec("logistic_fe", 6000, 20, 5), data_root).frame(spark)
+    by_core = LogisticFE("y", FEATURES, "provider", row_id="id").fit(logistic_frame)
+    assert by_core.partitions == cores and by_core.settings["partitions_from"] == "one per core" and by_core.execution["cores"] == cores
+    # with a small limit on a partition's bytes the size decides: 6,000 rows by 5 features are 240,000 bytes
+    monkeypatch.setattr(engine, "PARTITION_BYTES", 40_000)
+    by_size = LogisticFE("y", FEATURES, "provider", row_id="id").fit(logistic_frame)
+    assert by_size.partitions == 6 and by_size.settings["partitions_from"] == "by size"
+    assert np.max(np.abs(by_size.coefficients - by_core.coefficients) / by_core.standard_errors) < 1e-9
+    assert set(by_size.provider_effects["provider"]) == set(by_core.provider_effects["provider"])
+
+
 def test_cox_on_spark_agrees_with_pprof_py(survival):
     pprof_py = pytest.importorskip("pprof_py")
     frame, pdf = survival
