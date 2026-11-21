@@ -8,9 +8,11 @@ from ..testkit.specs import COX
 
 class Engine(Adapter):
     name, kind, role = "engine", "spark", "engine"
+    rows_per_partition = None                              # None: the engine's own default
 
     def describe(self, spark=None):
         return {"name": self.name, "kind": self.kind, "role": self.role, "version": __version__,
+                "rows_per_partition": self.rows_per_partition,
                 "algorithm": "weighted-Gram Cox; profile-likelihood logistic with providers at the bound; "
                              "NumPy kernels per partition, one pass per evaluation"}
 
@@ -27,8 +29,8 @@ class Engine(Adapter):
         frame = dataset.frame(spark)
         options = {"tol": 1e-10 if model.convergence == "tight" else 1e-8, "row_id": "id",
                    "max_iterations": model.max_iterations or 50}
-        if self.options.get("engine_rows_per_partition"):
-            options["rows_per_partition"] = int(self.options["engine_rows_per_partition"])
+        if self.options.get("engine_rows_per_partition") or self.rows_per_partition:
+            options["rows_per_partition"] = int(self.options.get("engine_rows_per_partition") or self.rows_per_partition)
         if model.family == COX:
             if not model.strata and self.options.get("engine_partitions"):     # "input" (the default), a number, or "rows"
                 options["partitions"] = self.options["engine_partitions"]
@@ -52,4 +54,18 @@ class Engine(Adapter):
                          {k: v for k, v in fitted.settings.items() if v is not None}, dict(fitted.seconds), extras)
 
 
+class Engine125k(Engine):
+    """The engine with 125,000 rows per partition instead of 50,000: at 5 million rows, 40 tasks per
+    pass instead of 100. Beside `engine` in one plan it shows what a task costs on a cluster apart
+    from its rows (OPEN_ITEMS OI-25)."""
+    name, rows_per_partition = "engine_125k", 125_000
+
+
+class Engine250k(Engine):
+    """As `engine_125k`, with 250,000 rows per partition: 20 tasks per pass at 5 million rows."""
+    name, rows_per_partition = "engine_250k", 250_000
+
+
 register("engine", Engine)
+register("engine_125k", Engine125k)
+register("engine_250k", Engine250k)

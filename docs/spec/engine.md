@@ -224,7 +224,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 120 tests. In the sandbox of 2026-11-21 (no R installed) 117 pass and the 3
+The repository has 122 tests. In the sandbox of 2026-11-21 (no R installed) 119 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5
@@ -282,8 +282,11 @@ ten executors and no new executor in the way, a call took 20.7 seconds for Cox w
 features, 14.4 to 16.4 and 19.9 for the logistic model at 50 and 100, and without strata 17.7 and
 18.5 with the rows left in the input's partitions, against 29 and 37 with the default of version
 0.6. Decision D-19, approved the same day, makes the input's partitions the default again: version
-0.7 of this specification. Version 0.7 has not run on a cluster; the configuration that is now its
-default has, as `partitions="input"`.
+0.7 of this specification. Version 0.7 has run on the cluster with strata and with providers
+(`compare_5m_warm`, 2026-11-21, with every other implementation in one session): whole calls of
+19.7 and 19.8 seconds for Cox at 50 and 100 features and 15.0 and 19.0 for the logistic model by
+medians of four, 1.8 to 4.6 times shorter than pprof_spark's. Without strata it has not run there;
+the configuration that is now its default has, as `partitions="input"`.
 
 ### 5.3 The reference's stopping rule
 

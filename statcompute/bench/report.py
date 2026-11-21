@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ..validation import compare_records, flags_across_records
-from .results import halved_steps, medians, summary, to_markdown, where_time_went
+from .. import references
+from .results import halved_steps, implementations, medians, summary, to_markdown, where_time_went
 
 TIMING = ["model", "rows", "features", "design", "adapter", "role", "version", "status", "compare_s", "wall_s", "fit_s", "iterations",
           "executors", "tasks", "effective_cores", "share_of_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
@@ -20,6 +21,7 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
         return f"# {title}\n\n_no records_\n"
     static = next((r["environment"]["static"] for r in records if r.get("environment")), {})
     dbx = static.get("databricks") or {}
+    lock = references.lock()
     parts = [f"# {title}\n", f"Records: {len(records)}; plans: {sorted({r['plan'] for r in records})}.\n",
              "## Environment\n",
              to_markdown([{"spark": static.get("spark_version"), "runtime": dbx.get("runtime"),
@@ -27,17 +29,21 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
                            "scaling": dbx.get("scaling_type"), "photon": dbx.get("photon"),
                            "driver_memory_gb": None if not static.get("driver_memory_bytes")
                            else round(static["driver_memory_bytes"] / 1e9, 1)}]),
+             "## Implementations\n",
+             "Every build that ran, with the commit it reported and the commit `REFERENCES.lock` pins today. The caveat about "
+             "the pinned build, below, is judged against today's lock, so pinning a build clears it for the runs of that build.\n",
+             to_markdown(implementations(records, lock)),
              "## Runs\n",
              "`compare_s` is the number to compare: for a Spark implementation the whole call from the stored table (its own "
              "preparation included, whichever phase it reports it under); for a single-machine one the fit alone, with the data "
              "already in memory. A run with an entry under `caveats` is not a fair timing. A status of `running` means the "
              "process died during that fit, typically because the driver ran out of memory.\n",
-             to_markdown(summary(records), TIMING),
+             to_markdown(summary(records, lock), TIMING),
              "## Medians by version\n",
              "Completed runs by model, size, adapter and the version of this repository that made them. A results folder "
              "that has collected several rounds is read here round by round. `without_caveat` leaves out the runs "
              "whose timing the harness itself calls unfair.\n",
-             to_markdown(medians(records)),
+             to_markdown(medians(records, lock)),
              "## Where the time went\n",
              "Completed runs of the Spark implementations. `other_s` is the part of the call outside the reported phases. "
              "For the engine's Cox fits from version 0.10.0 on, `prepare_s` contains the first evaluation, which builds the "

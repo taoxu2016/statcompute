@@ -137,4 +137,43 @@ is 4.7e-7 away for the exact test at 100 features, where T_FLAG_P is 1e-9.
   the Python workers.
 - D-19: without strata, the input's partitions by default.
 - For a comparison with pprof_spark that can be quoted: its build pinned, and all implementations
-  in one session.
+  in one session. Section 8 has the session; the pin is to be confirmed.
+
+## 8. One session with every implementation (version 0.16.0)
+
+The maintainer rebuilt pprof_spark at its current version and ran `compare_5m_warm` once more on
+2026-11-21, with version 0.16.0: the engine, `lab_spark`, pprof_spark and `pprof_spark_cached` in one
+session, four repeats each, the stored table read and the Python workers started before every timed
+call. The engine's code for these two models is that of section 5.
+
+Whole calls in seconds: median of four, and the best.
+
+| Model, features | engine | `lab_spark` | pprof_spark | `pprof_spark_cached` | pprof_spark over engine: medians, best |
+|---|---|---|---|---|---|
+| Cox with strata, 50 | 19.7, 18.6 | 14.1, 10.7 | 34.5, 25.4 | 36.3, 29.1 | 1.8, 1.4 |
+| Cox with strata, 100 | 19.8, 16.6 | 18.9, 15.4 | 50.4, 49.5 | 56.9, 55.7 | 2.5, 3.0 |
+| Logistic, 50 | 15.0, 13.4 | 9.6, 9.4 | 47.7, 34.8 | 55.0, 53.0 | 3.2, 2.6 |
+| Logistic, 100 | 19.0, 16.9 | 16.0, 12.6 | 86.5, 68.8 | 69.5, 66.9 | 4.6, 4.1 |
+
+- **Against pprof_spark, in one session**, the engine's whole calls are 1.8 to 4.6 times shorter by
+  medians and 1.4 to 4.1 times by the best call. All of pprof_spark's 32 records carry the caveat
+  that their build is not the pinned one: the lock named the head of its repository of some hours
+  earlier. The records hold the commit of the build; the reports sent do not show it. From round 19
+  the report lists it and judges the pin on the day it is made.
+- **Against the prototype** the engine is 0.9 to 5.6 seconds behind by medians. For the logistic
+  model 3.2 to 4.6 seconds of that are the engine's pass for the provider effects and their tests,
+  which the prototype does not compute. For Cox it is the engine: its later evaluations take 2.0 to
+  2.8 seconds at 50 features and 3.0 to 4.0 at 100 at ten executors, the prototype's 1.8 to 2.0 and
+  2.7 to 2.9 on average in its calls without a stall. Probe A-12 finds 27 to 39 percent more time
+  in the engine's kernel, which centres the features (`docs/research/pass-cost.md`); that is part
+  of it (OI-35).
+- **What the Python start changed.** It took 1 to 2 seconds before 12 of the engine's 16 calls and
+  4 to 10 before the other 4. Inside the timed calls the slowest task was 4.0 to 7.3 seconds in 6 of
+  16, each on an executor attached 45 to 114 seconds before, and 1.2 to 2.1 in the other 10. Without
+  it (section 3) it was 6.5 to 9.5 seconds in 7 of 16, and 13.8 once. So a new executor still costs
+  its first pass some seconds, about half of what it did. The engine's medians went from 27.6, 26.0,
+  15.9 and 32.1 seconds to 19.7, 19.8, 15.0 and 19.0 between the two sessions with the same code;
+  how much of that is the Python start and how much the session cannot be told apart.
+- **Flags.** The same providers flagged in all eight runs of each logistic dataset, the four of
+  section 6 and these four.
+

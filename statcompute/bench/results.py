@@ -24,7 +24,56 @@ def _gb(value) -> Optional[float]:
     return None if value is None else round(value / 1e9, 3)
 
 
-def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+NOT_PINNED = "the installed build is not the commit pinned in REFERENCES.lock"
+
+
+def _pin(record: Dict[str, Any], lock: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The lock's entry for a record's implementation: its own name, or the name it is a variant of."""
+    names = (lock or {}).get("references") or {}
+    name = (record.get("adapter") or {}).get("name") or ""
+    keys = [key for key in names if name == key or name.startswith(key + "_")]
+    return names[max(keys, key=len)] if keys else None
+
+
+def _matches(record: Dict[str, Any], lock: Optional[Dict[str, Any]]) -> Optional[bool]:
+    """Whether the build a record ran is the one the lock pins now. None when either is unknown."""
+    found, pinned = (record.get("adapter") or {}).get("commit"), (_pin(record, lock) or {}).get("commit")
+    return None if not (found and pinned) else bool(pinned.startswith(found) or found.startswith(pinned))
+
+
+def caveats(record: Dict[str, Any], lock: Optional[Dict[str, Any]] = None) -> List[str]:
+    """A record's caveats. With a lock, the one about the pinned build is judged against that lock,
+    not against the lock of the day of the run: pinning a build afterwards clears it for the runs of
+    that build, and pinning another raises it."""
+    kept = [c for c in (record.get("caveats") or []) if lock is None or c != NOT_PINNED]
+    if lock is not None and _matches(record, lock) is False:
+        kept.append(NOT_PINNED)
+    return kept
+
+
+def implementations(records: Iterable[Dict[str, Any]], lock: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Every build that ran: adapter, its own version, the commit it reported, the commit the lock
+    pins and whether they are the same, with the number of records."""
+    groups: Dict[Any, int] = {}
+    last: Dict[Any, Dict[str, Any]] = {}
+    for r in records:
+        a = r.get("adapter") or {}
+        if r.get("status") in ("unavailable", None):
+            continue
+        key = (a.get("name"), str(a.get("version")), a.get("commit"))
+        groups[key] = groups.get(key, 0) + 1
+        last[key] = r
+    rows = []
+    for (name, version, commit), count in sorted(groups.items(), key=lambda item: (str(item[0][0]), str(item[0][1]), str(item[0][2]))):
+        pinned = (_pin(last[(name, version, commit)], lock) or {}).get("commit")
+        same = _matches(last[(name, version, commit)], lock)
+        rows.append({"adapter": name, "role": (last[(name, version, commit)].get("adapter") or {}).get("role"), "version": version,
+                     "commit": commit, "pinned_commit": pinned, "is_the_pinned_build": None if same is None else ("yes" if same else "no"),
+                     "records": count})
+    return rows
+
+
+def summary(records: Iterable[Dict[str, Any]], lock: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """One flat row per run: what ran, whether it completed, and what it took."""
     rows = []
     for r in records:
@@ -60,18 +109,18 @@ def summary(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "worst_straggler_ratio": None if spark.get("worst_straggler_ratio") is None
             else round(spark["worst_straggler_ratio"], 1),
             "driver_peak_rss_gb": _gb(process.get("peak_rss_with_children_bytes") or process.get("peak_rss_bytes")),
-            "caveats": "; ".join(r.get("caveats") or []),
+            "caveats": "; ".join(caveats(r, lock)),
             "note": "" if not r.get("error") else r["error"]["message"][:160],
         })
     return rows
 
 
-def medians(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def medians(records: Iterable[Dict[str, Any]], lock: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Completed runs by model, size, adapter and version of this repository: how many, how many of
     them without a caveat, and the median and the smallest time to compare, over all of them and
     over those without a caveat. The version separates the rounds of the engine in one results folder."""
     groups: Dict[Any, List[Dict[str, Any]]] = {}
-    for row in summary(records):
+    for row in summary(records, lock):
         if row["status"] == "ok" and row["compare_s"] is not None:
             groups.setdefault((row["model"], row["rows"], row["features"], row["adapter"], row["version"]), []).append(row)
     def order(key):                                   # versions as numbers, so that 0.10.0 follows 0.9.0

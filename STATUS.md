@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-21, version 0.16.0 (round 18: D-18, D-19 and D-20 approved and implemented; the record of a fit kept
-with the model; pprof_spark pinned at its current head).
+Updated 2026-11-21, version 0.17.0 (round 19: every implementation in one session on the cluster; the report lists the
+builds that ran and judges the pin itself; an experiment on the size of partitions prepared).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass.
 
 ## First cluster run, 2026-11-16
 
@@ -221,11 +221,40 @@ from now on, not at the old build.
 
 Not done in this round: the Newton step that remains at pprof_py's estimate, in the harness (D-09, OI-34).
 
+## Round 19 (2026-11-21): one session with every implementation
+
+The maintainer rebuilt pprof_spark at its current version and ran `compare_5m_warm` with version 0.16.0: the engine,
+its prototype, pprof_spark and `pprof_spark_cached` in one session, four repeats each
+(`docs/reports/2026-11-21-databricks-warm-runs.md`, section 8).
+
+| Model, features | engine: median, best (s) | pprof_spark | pprof_spark over engine, by medians |
+|---|---|---|---:|
+| Cox with strata, 50 | 19.7, 18.6 | 34.5, 25.4 | 1.8 |
+| Cox with strata, 100 | 19.8, 16.6 | 50.4, 49.5 | 2.5 |
+| Logistic, 50 | 15.0, 13.4 | 47.7, 34.8 | 3.2 |
+| Logistic, 100 | 19.0, 16.9 | 86.5, 68.8 | 4.6 |
+
+- **The build that ran was not the pinned one**, so every pprof_spark record carries that caveat. Round 19 pins the
+  head of pprof_spark's repository as it is now (`b92919c`, round 177); the report lists every build's commit and judges
+  the pin on the day it is made, so rendering it again settles this without a new fit (OI-36).
+- **The Python start before the clock halves what a new executor costs a call, and does not remove it:** the slowest
+  task was 4.0 to 7.3 seconds in 6 of 16 calls, against 6.5 to 9.5 in 7 of 16 before (OI-31).
+- **The engine is still behind its own prototype for Cox with strata**, 19.7 against 14.1 seconds at 50 features. Part
+  of it is found: the engine's kernel centres the features and takes 27 to 39 percent longer (probe A-12). And a pass
+  costs more for its tasks than for its rows: in the sandbox, receiving the rows is half of a pass or more and hardly
+  depends on how much is received (probe A-11; `docs/research/pass-cost.md`).
+
+What round 19 adds for the next run: adapters `engine_125k` and `engine_250k`, the engine at 125,000 and 250,000 rows per
+partition, and plan `engine_partitions_5m_warm`, which runs them beside the default in one session (OI-25).
+
+RI-1, the report for pprof_py's maintainers drafted in `docs/reference-reports/`, was checked against pprof_py's
+repository on 2026-11-21: its head is still the commit the draft cites, and the loop is unchanged.
+
 ## What has not happened
 
-- No run of all implementations in one session with the stored table read first, and none with pprof_spark at a pinned
-  build (OI-36).
-- No run of version 0.16.0 on Databricks: the Python start before the clock is untried there.
+- No run with pprof_spark at a build known to be the pinned one (OI-36): the session of round 19 has the runs, and the
+  next rendering of its report says which build they are.
+- No run of the engine at other partition sizes on Databricks (OI-25), and none of version 0.17.0.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -235,13 +264,13 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. On the cluster: pprof_spark rebuilt at its current head, then `compare_5m_warm` once, all implementations in one
-   session (OI-36). The report then says whether a new executor still slows the first evaluation (OI-31).
-2. Report RI-1 to pprof_py's maintainers (D-12); the text is drafted in `docs/reference-reports/`.
-3. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
-4. The remaining Newton step in the harness (D-09, OI-34), and why the engine is 2.5 to 4 seconds behind its prototype
-   with strata (OI-35).
-5. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+1. Render the report of `compare_5m_warm` again with round 19 applied (no new fit): its section "Implementations" says
+   which build of pprof_spark ran and whether it is the pinned one (OI-36).
+2. Run `engine_partitions_5m_warm`: the engine at 50,000, 125,000 and 250,000 rows per partition (OI-25).
+3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
+4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+5. The remaining Newton step in the harness (D-09, OI-34); the engine against its prototype (OI-35).
+6. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

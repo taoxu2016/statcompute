@@ -20,11 +20,11 @@
   },
   "pprof_spark": {
    "repository": "https://github.com/UM-KevinHe/pprof_spark",
-   "commit": "5db844e23669d194b00996abf13e46804124f834",
-   "version": "round 176",
+   "commit": "b92919c02551ebbd010f4fda0ff5a25cee9eaf2b",
+   "version": "round 177",
    "license": "MIT",
    "inspected": "2026-11-21",
-   "role": "current Spark implementation. The pin is the head of its repository on 2026-11-21, the build the maintainer benchmarks from then on; the builds of 2026-11-16 (d0b9bd5, round 151) and 2026-11-18 (7a14624, round 156) are behind it. Since round 151 it keeps blocks at a target size and reduces them in groups on the executors, and stores off the heap by default. The capability notes of docs/capabilities.md were read at e5c9484 and have not been read again at this commit (OPEN_ITEMS OI-37)"
+   "role": "current Spark implementation. The pin is the head of its repository when the maintainer rebuilt it on 2026-11-21 for the run of compare_5m_warm in one session; the report says for every record whether its build is this one. The builds of 2026-11-16 (d0b9bd5, round 151) and 2026-11-18 (7a14624, round 156) are behind it. Since round 151 it keeps blocks at a target size and reduces them in groups on the executors, and stores off the heap by default. The capability notes of docs/capabilities.md were read at e5c9484 and have not been read again at this commit (OPEN_ITEMS OI-37)"
   }
  }
 }

@@ -1,0 +1,17 @@
+{
+ "name": "engine_partitions_5m_warm",
+ "description": "The engine at 50,000, 125,000 and 250,000 rows per partition (100, 40 and 20 tasks per pass) on the datasets of compare_5m, four repeats, in one session, with the stored table read and the Python workers started before every timed fit: what a task costs on the cluster apart from its rows (OPEN_ITEMS OI-25).",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": "provider", "convergence": "default"}],
+  "logistic_fe": [{"family": "logistic_fe", "convergence": "default"}]
+ },
+ "adapters": ["engine", "engine_125k", "engine_250k"],
+ "repeats": 4,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all"}
+}

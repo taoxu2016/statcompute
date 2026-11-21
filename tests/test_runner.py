@@ -160,6 +160,43 @@ def test_the_executors_report_their_libraries(spark):
     assert set(found[0]) >= {"python", "numpy", "pandas", "pyarrow", "blas", "tasks"}
 
 
+def test_the_report_judges_the_pin_when_it_is_made_and_lists_the_builds_that_ran():
+    """Round 19: runs of a build that is pinned afterwards lose the caveat about the pin, with no new fit."""
+    from statcompute.bench.results import NOT_PINNED, caveats, implementations, medians, summary
+
+    def run(name, commit, seconds, more=()):
+        record = a_record(name, "0.16.0", seconds, {"fit": seconds}, [1.0, 2.0], role="reference", caveats=list(more) + [NOT_PINNED])
+        record["adapter"].update(version="0.3.1", commit=commit)
+        return record
+
+    records = [run("pprof_spark", "b92919c0", 50.0), run("pprof_spark_cached", "b92919c0", 60.0, ["executors ranged from 6 to 10 during the fit"]),
+               run("pprof_spark", "7a146242", 70.0)]
+    old = {"references": {"pprof_spark": {"commit": "5db844e23669d194b00996abf13e46804124f834"}}}
+    new = {"references": {"pprof_spark": {"commit": "b92919c0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "pprof_py": {"commit": "94b5476"}}}
+    assert all(NOT_PINNED in caveats(r) and NOT_PINNED in caveats(r, old) for r in records)        # as recorded; and under the old lock
+    assert [NOT_PINNED in caveats(r, new) for r in records] == [False, False, True]                # the variant follows its package's pin
+    assert caveats(records[1], new) == ["executors ranged from 6 to 10 during the fit"]            # other caveats stay
+    listed = {(row["adapter"], row["commit"]): row for row in implementations(records, new)}
+    assert listed[("pprof_spark", "b92919c0")]["is_the_pinned_build"] == "yes" and listed[("pprof_spark", "7a146242")]["is_the_pinned_build"] == "no"
+    assert listed[("pprof_spark_cached", "b92919c0")]["pinned_commit"].startswith("b92919c0") and listed[("pprof_spark", "b92919c0")]["records"] == 1
+    assert [row["caveats"] for row in summary(records, new)] == ["", "executors ranged from 6 to 10 during the fit", NOT_PINNED]
+    by = {(m["adapter"], m["runs"]): m for m in medians(records, new)}
+    assert by[("pprof_spark", 2)]["runs_without_caveat"] == 1 and by[("pprof_spark", 2)]["median_compare_s_without_caveat"] == 50.0
+    assert by[("pprof_spark_cached", 1)]["runs_without_caveat"] == 0
+
+
+def test_the_engine_has_adapters_with_larger_partitions(spark, tmp_path):
+    """Round 19: the same engine at other rows per partition, side by side in one plan (OI-25)."""
+    assert {"engine", "engine_125k", "engine_250k"} <= set(adapters.names())
+    assert adapters.get("engine_125k").rows_per_partition == 125_000 and adapters.get("engine").rows_per_partition is None
+    plan = dict(PLAN, adapters=["engine", "engine_125k"])
+    records = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))
+    by = {r["adapter"]["name"]: r for r in records if r["model"]["family"] == "logistic_fe"}
+    assert by["engine"]["status"] == by["engine_125k"]["status"] == "ok"
+    assert by["engine_125k"]["fit"]["settings"]["rows_per_partition"] == 125_000 and by["engine_125k"]["adapter"]["rows_per_partition"] == 125_000
+    assert by["engine"]["fit"]["coefficients"] == pytest.approx(by["engine_125k"]["fit"]["coefficients"], rel=1e-9, abs=1e-12)
+
+
 def test_the_memory_guard_skips_a_fit_that_would_not_fit_the_driver(spark, tmp_path):
     plan = dict(PLAN, adapters=["lab_numpy"], options={"driver_memory_bytes": 1000})
     record = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))[0]
