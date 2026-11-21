@@ -193,9 +193,10 @@ providers.
   function is 13 to 28 kB that way. It carries the kernels' functions and no module object: the
   functions on the executors reach the kernels through namespaces of functions, because a module
   sent by value would take its loader and its file's path along. Tested with executors whose own
-  copy is stale and refuses to import (`tests/test_ship.py`); on a cluster from version 0.18.0 on,
-  not yet run there. The earlier way, an archive added to the session, is the fallback, and
-  refuses to go on when the package has changed since it was sent.
+  copy is stale and refuses to import (`tests/test_ship.py`), and run on Databricks on 2026-11-21,
+  on a cluster that still held an earlier version's archive: 48 fits without a restart. The
+  earlier way, an archive added to the session, is the fallback, and refuses to go on when the
+  package has changed since it was sent.
 - **The record of a fit** (decision D-16). Every model carries `execution`: the versions of this
   package and of Spark, the libraries on the driver with their BLAS, the Arrow batch size, and the
   layout: partitions, how the rows are placed, the row identifier. `executor_libraries(spark)` asks
@@ -291,7 +292,11 @@ ten executors and no new executor in the way, a call took 20.7 seconds for Cox w
 features, 14.4 to 16.4 and 19.9 for the logistic model at 50 and 100, and without strata 17.7 and
 18.5 with the rows left in the input's partitions, against 29 and 37 with the default of version
 0.6. Decision D-19, approved the same day, makes the input's partitions the default again: version
-0.7 of this specification. Version 0.7 has run on the cluster with strata and with providers
+0.7 of this specification. How many partitions a pass should have was measured there on
+2026-11-21 (`docs/reports/2026-11-21-databricks-partition-size.md`): at 5 million rows on 40 cores,
+40 tasks per pass made later evaluations 17 to 28 percent shorter than the 100 of the default, and
+20 were no better than 100. Decision D-21 proposes one partition per core as the default; this
+version still has 50,000 rows per partition. Version 0.7 has run on the cluster with strata and with providers
 (`compare_5m_warm`, 2026-11-21, with every other implementation in one session): whole calls of
 19.7 and 19.8 seconds for Cox at 50 and 100 features and 15.0 and 19.0 for the logistic model by
 medians of four, 1.8 to 4.6 times shorter than pprof_spark's at its pinned build `b92919c`. Without strata it has not run there;

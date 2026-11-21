@@ -179,6 +179,9 @@ def test_the_report_judges_the_pin_when_it_is_made_and_lists_the_builds_that_ran
     listed = {(row["adapter"], row["commit"]): row for row in implementations(records, new)}
     assert listed[("pprof_spark", "b92919c0")]["is_the_pinned_build"] == "yes" and listed[("pprof_spark", "7a146242")]["is_the_pinned_build"] == "no"
     assert listed[("pprof_spark_cached", "b92919c0")]["pinned_commit"].startswith("b92919c0") and listed[("pprof_spark", "b92919c0")]["records"] == 1
+    assert listed[("pprof_spark", "b92919c0")]["code_sent"] is None
+    records[0]["fit"]["extras"] = {"execution": {"code_sent": "by value"}}
+    assert {row["code_sent"] for row in implementations(records, new) if row["commit"] == "b92919c0"} == {"by value", None}
     assert [row["caveats"] for row in summary(records, new)] == ["", "executors ranged from 6 to 10 during the fit", NOT_PINNED]
     by = {(m["adapter"], m["runs"]): m for m in medians(records, new)}
     assert by[("pprof_spark", 2)]["runs_without_caveat"] == 1 and by[("pprof_spark", 2)]["median_compare_s_without_caveat"] == 50.0

@@ -57,3 +57,13 @@ of 2026-11-21 point the same way: 17 and 33 tasks per pass were faster than 100.
 
 What does not follow: that a packed working set is worth building. It may still be on a cluster,
 where the two processes do not share a core, but nothing here supports it.
+
+## What the cluster said
+
+Plan `engine_partitions_5m_warm` ran on 2026-11-21
+(`docs/reports/2026-11-21-databricks-partition-size.md`). At 5 million rows on 40 cores, later
+evaluations took 17 to 28 percent less with 40 tasks per pass than with 100, and with 20 tasks about
+as long as with 100: fewer, larger tasks cost less until cores go idle. With one task per core a
+second or more of every evaluation still moved with neither the number of tasks nor their rows
+(OI-40).
+

@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-21, version 0.18.0 (round 20: the comparison with pprof_spark stands at its pinned build; the package's
-code travels inside each task, so a changed package needs no restart of the cluster).
+Updated 2026-11-21, version 0.19.0 (round 21: on the cluster the package sent by value works without a restart, and one
+task per core is the fastest size of partition tried; D-21 proposes it as the default).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none.
 
 ## First cluster run, 2026-11-16
 
@@ -269,11 +269,36 @@ run by value and fail by reference (`tests/test_ship.py`). A task's function wei
 3 kB, and carries the kernels' functions but no module object, whose loader and path would belong to the driver's
 machine. The archive is kept as the fallback, with its guard. Every model's `execution` says how its code was sent.
 
+## Round 21 (2026-11-21): the cluster's answers on round 20 and on the size of partitions
+
+The maintainer ran `engine_partitions_5m_warm` with version 0.18.0 on the cluster as it stood, without a restart
+(`docs/reports/2026-11-21-databricks-partition-size.md`).
+
+- **The package sent by value works on Databricks.** The cluster still held the archive of 0.16.0 and had refused every
+  fit of 0.17.0; all 48 fits of 0.18.0 completed. A changed package needs no restart any more (OI-38 closed).
+- **One task per core is the fastest of the three sizes tried.** Later evaluations, medians at a steady ten executors:
+
+| Model, features | 100 tasks per pass (the default) | 40 tasks | 20 tasks |
+|---|---:|---:|---:|
+| Cox with strata, 50 | 2.5 s | 1.8 s | 2.2 s |
+| Cox with strata, 100 | 3.6 s | 3.0 s | 3.6 s |
+| Logistic, 50 | 1.6 s | 1.3 s | 1.5 s |
+| Logistic, 100 | 2.4 s | 1.9 s | 2.2 s |
+
+  Whole calls by medians of four: 12.8, 21.1, 15.5 and 17.8 seconds with 40 tasks, against 20.1, 22.4, 17.8 and 24.1
+  with 100. The flags are the same with all three.
+- **D-21 proposes the consequence:** one partition per core by default, more only when a partition would exceed 200 MB
+  of features; an explicit `rows_per_partition` or `partitions` keeps the layout independent of the cluster. Not
+  implemented until the maintainer rules.
+- **What is left of an evaluation:** a second or more that moved with neither the tasks nor their rows (OI-40).
+
+Round 21 changes one thing in the code: the report's list of builds says how each record's code reached the executors.
+
 ## What has not happened
 
-- No completed run of the engine at other partition sizes on Databricks (OI-25): the first attempt was refused fit by
-  fit, the cluster not having been restarted after the package changed.
-- No run of version 0.18.0 on Databricks: sending the package by value is untried there (OI-38).
+- No run on Databricks of the engine and its prototype, or of the engine and pprof_spark, at one task per core in one
+  session: the sizes of partition were compared for the engine alone.
+- No measurement of what an evaluation costs apart from its tasks and its rows (OI-40).
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -283,12 +308,13 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. With round 20 applied and without restarting the cluster, run `engine_partitions_5m_warm`: the engine at 50,000,
-   125,000 and 250,000 rows per partition (OI-25). It is also the first run of sending the package by value (OI-38).
-2. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
-3. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
-4. The remaining Newton step in the harness (D-09, OI-34); the engine against its prototype (OI-35).
-5. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+1. The maintainer's ruling on D-21.
+2. Then: the default implemented; one session of `compare_5m_warm` with every implementation at it; and without strata
+   a task per core tried against the input's partitions (OI-39).
+3. What an evaluation costs when it does nothing (OI-40).
+4. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
+5. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+6. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20).
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

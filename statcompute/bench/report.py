@@ -31,7 +31,8 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
                            else round(static["driver_memory_bytes"] / 1e9, 1)}]),
              "## Implementations\n",
              "Every build that ran, with the commit it reported and the commit `REFERENCES.lock` pins today. The caveat about "
-             "the pinned build, below, is judged against today's lock, so pinning a build clears it for the runs of that build.\n",
+             "the pinned build, below, is judged against today's lock, so pinning a build clears it for the runs of that build. "
+             "`code_sent` says how the engine's code reached the executors: by value, inside each task, or as an archive.\n",
              to_markdown(implementations(records, lock)),
              "## Runs\n",
              "`compare_s` is the number to compare: for a Spark implementation the whole call from the stored table (its own "

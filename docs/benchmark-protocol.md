@@ -132,7 +132,7 @@ single-machine fit leaves the executors idle, and an autoscaling cluster shrinks
 | `compare_5m` | 5 million rows, 8,000 providers, 50 and 100 features; Cox with strata and the logistic model; every implementation; two repeats | The maintainer's comparison on the standard cluster |
 | `unstratified_5m` | The two Cox datasets of `compare_5m`, without strata; the engine, pprof_spark and pprof_py | The fit without strata on the cluster |
 | `reference_stop_5m` | pprof_py alone on the two Cox datasets of `unstratified_5m`, two repeats | How many steps its Newton loop halved (OI-24). Needs no executors; about 18 GB on the driver at 100 features |
-| `engine_partitions_5m_warm` | The engine at 50,000, 125,000 and 250,000 rows per partition (adapters `engine`, `engine_125k`, `engine_250k`) on the datasets of `compare_5m`, four repeats, with `warm_input` | What a task costs on the cluster apart from its rows (OI-25) |
+| `engine_partitions_5m_warm` | The engine at 50,000, 125,000 and 250,000 rows per partition (adapters `engine`, `engine_125k`, `engine_250k`) on the datasets of `compare_5m`, four repeats, with `warm_input` | What a task costs on the cluster apart from its rows (OI-25). Ran on 2026-11-21: `docs/reports/2026-11-21-databricks-partition-size.md` |
 | `compare_5m_warm` | `compare_5m` for the Spark implementations only, four repeats, with `warm_input` | Timings clear of an executor's first read of a file (D-18) |
 | `unstratified_5m_warm`, `unstratified_5m_warm_input` | `unstratified_5m` for the engine only, four repeats, with `warm_input`; the second leaves the rows in the input's partitions | The two layouts without strata side by side (D-10) |
 

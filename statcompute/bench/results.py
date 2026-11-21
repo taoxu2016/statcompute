@@ -53,9 +53,11 @@ def caveats(record: Dict[str, Any], lock: Optional[Dict[str, Any]] = None) -> Li
 
 def implementations(records: Iterable[Dict[str, Any]], lock: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Every build that ran: adapter, its own version, the commit it reported, the commit the lock
-    pins and whether they are the same, with the number of records."""
+    pins and whether they are the same, how the engine's code reached the executors (by value, or as
+    an archive; from version 0.18.0), and the number of records."""
     groups: Dict[Any, int] = {}
     last: Dict[Any, Dict[str, Any]] = {}
+    sent: Dict[Any, set] = {}
     for r in records:
         a = r.get("adapter") or {}
         if r.get("status") in ("unavailable", None):
@@ -63,13 +65,16 @@ def implementations(records: Iterable[Dict[str, Any]], lock: Optional[Dict[str, 
         key = (a.get("name"), str(a.get("version")), a.get("commit"))
         groups[key] = groups.get(key, 0) + 1
         last[key] = r
+        how = ((((r.get("fit") or {}).get("extras") or {}).get("execution")) or {}).get("code_sent")
+        if how:
+            sent.setdefault(key, set()).add(how)
     rows = []
     for (name, version, commit), count in sorted(groups.items(), key=lambda item: (str(item[0][0]), str(item[0][1]), str(item[0][2]))):
         pinned = (_pin(last[(name, version, commit)], lock) or {}).get("commit")
         same = _matches(last[(name, version, commit)], lock)
         rows.append({"adapter": name, "role": (last[(name, version, commit)].get("adapter") or {}).get("role"), "version": version,
                      "commit": commit, "pinned_commit": pinned, "is_the_pinned_build": None if same is None else ("yes" if same else "no"),
-                     "records": count})
+                     "code_sent": ", ".join(sorted(sent.get((name, version, commit), ()))) or None, "records": count})
     return rows
 
 
