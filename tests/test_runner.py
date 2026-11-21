@@ -91,8 +91,10 @@ def test_a_report_reads_a_folder_of_several_rounds_round_by_round():
     records[2]["spark"]["slowest_task"] = {"stage": 3, "executor": "7", "executor_attached_s_before": 3.21, "gc_s": 1.5,
                                            "fetch_wait_s": 0.0, "locality": "ANY", "input_bytes": 20_000_000}
     records[3]["warm_input"] = {"mode": "all", "seconds": 7.2, "rows": 100}
+    records[0]["fit"]["extras"] = {"likelihood_calls": 11, "halved_steps": 6}       # the reference halved its last step
     by = {(c["adapter"], c["version"]): c for c in compare_records(records, reference="pprof_py")}
     assert set(by) == {("engine", "0.9.0"), ("engine", "0.10.0")}
+    assert all(row["reference_halved_steps"] == 6 for row in by.values())
     assert by[("engine", "0.9.0")]["runs"] == 1 and by[("engine", "0.9.0")]["max_abs_coefficient_difference"] == 0
     newest = by[("engine", "0.10.0")]                    # both runs are compared, and the one furthest from the reference is shown
     assert newest["runs"] == 2 and newest["max_coefficient_difference_in_se"] == pytest.approx(0.01)

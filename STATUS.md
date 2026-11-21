@@ -1,7 +1,6 @@
 # Status
 
-Updated 2026-11-20, version 0.14.0 (round 16: the harness counts the likelihood calls of pprof_py's Cox fits, so that
-a halved step shows in the report).
+Updated 2026-11-21, version 0.15.0 (round 17: seven decisions approved, and the warm runs on the cluster read).
 
 ## What exists
 
@@ -25,6 +24,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
+Round 17 added none.
 
 ## First cluster run, 2026-11-16
 
@@ -180,9 +180,35 @@ Checked in the sandbox through the harness, on the two datasets of probe A-8 (10
 gives 19 calls and 14 halved steps, beside a difference of 3.49e-5 standard errors from the engine at both
 tolerances; seed 79 gives 5 calls, none halved, and 6e-12.
 
+## Round 17 (2026-11-21): decisions, and the warm runs
+
+**Approved by the maintainer on 2026-11-21:** D-08 (the engine is Python on Spark), D-09 (agreement with pprof_py for
+Cox allows for the Newton step that remains at its estimate), D-10 (the layout without strata), D-11 (what "prepare"
+and "fit" mean), D-15 (stable provider-level flags), D-16 (the execution record), D-17 (the stage "handed over" and
+the register of issues). Open: D-18, and the two proposals of this round, D-19 and D-20.
+
+**The four reports of 2026-11-21**, read in `docs/reports/2026-11-21-databricks-warm-runs.md`:
+
+- **pprof_py's halved steps are confirmed on the cluster.** At 100 features without strata its fit of 3 iterations made
+  11 calls to its likelihood: 6 steps halved, as the regenerated data said. At 50 features 5 calls, none halved.
+- **Reading the stored table before the clock takes the 17 to 21 second stall out of the timed call.** The light job
+  took 0.6 to 1.8 seconds in all 24 Cox calls. What is left inside is the first Python task of a new executor, 6.5 to
+  10.5 seconds in half of the calls (D-20).
+- **Without strata the input's partitions beat the default of round 12 in every part of the call:** 17.7 and 18.5
+  seconds at best against 29 and 37. D-10 was approved the same day and named this run as the test of its default,
+  so D-19 proposes the input's partitions as the default; the code is unchanged until the maintainer rules.
+- **Side by side, with the table read first,** the engine's whole calls are 1.4 to 2.5 times shorter than pprof_spark's
+  by medians, in different sessions and against a build that is not pinned (OI-36), and 2.5 to 4 seconds longer than
+  its own prototype's with strata (OI-35).
+- **The same providers were flagged in all four runs** of both logistic datasets, by all three tests.
+
+Round 17 changes little code: the two flag tolerances are named classes (T_FLAG_Z, T_FLAG_P), and an agreement row
+says how many steps the reference halved.
+
 ## What has not happened
 
-- No fit of version 0.11.0 or later on Databricks: 0.8.0, 0.9.0 and 0.10.0 have run there. The report of 0.12.0 has.
+- No run of all implementations in one session with the stored table read first, and none with pprof_spark at a pinned
+  build (OI-36).
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -192,16 +218,13 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. Run `compare_5m` and `unstratified_5m` once with version 0.13.0: the records then name the executor of each run's
-   slowest task, how long it had been attached and how much it read (OI-31).
-2. Run `compare_5m_warm`: if the reading of the stalls is right, they are gone from the timed calls, and versions can
-   be compared (D-18).
-3. Run `unstratified_5m_warm` and `unstratified_5m_warm_input` one after the other in one session, for D-10 (OI-33).
-4. Run `reference_stop_5m`: pprof_py alone on the two Cox datasets without strata. The report then shows how many steps
-   its Newton loop halved: none expected at 50 features, six at 100 (OI-24). The fit at 100 features needs about 18 GB on
-   the driver and died in five of ten earlier attempts on the 32 GB driver; the 128 GB driver avoids that.
-5. Decisions D-08 to D-11 and D-15 to D-18 are proposed and open.
-6. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
+1. The maintainer's rulings on D-18, D-19 and D-20.
+2. Then, in one round: the default without strata (D-19), the Python workers started before the clock (D-20), the rest
+   of the execution record (D-16, OI-29), and the remaining Newton step in the harness (D-09, OI-34).
+3. Report RI-1 to pprof_py's maintainers (D-12).
+4. The commit of the pprof_spark build to benchmark, and one session of `compare_5m_warm` with every implementation
+   (OI-36).
+5. The outputs the engine still lacks (OI-20), in the order the maintainer needs them.
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

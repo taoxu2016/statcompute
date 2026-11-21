@@ -67,7 +67,7 @@ with its input cached first), `lab_numpy`, `lab_spark`.
 | Prototype | `statcompute/lab/` with an adapter of role "prototype" | It agrees with pprof_py within the tolerance classes on the validation tests, and the harness has timed it |
 | Specification | `docs/spec/` | The maintainer approves the estimator's definition, edge cases and validation plan |
 | Engine | `statcompute/engine/` with an adapter of role "engine" | It passes the same validation tests and meets its target on the standard cluster |
-| Handed over (proposed, D-17) | `docs/handover/`, one folder per algorithm; none yet | Three things exist and have been offered to the maintainers of pprof_py and pprof_spark: a written specification, a reference kernel that needs no Spark, and fixtures with expected values. What they found when they applied it has come back as evidence |
+| Handed over (D-17) | `docs/handover/`, one folder per algorithm; none yet | Three things exist and have been offered to the maintainers of pprof_py and pprof_spark: a written specification, a reference kernel that needs no Spark, and fixtures with expected values. What they found when they applied it has come back as evidence |
 
 A rejected candidate keeps its probe and its numbers. The register of hypotheses in the research
 roadmap (its section 8.4) records the status of each.

@@ -5,10 +5,10 @@ tests, a p-value against 1 - level for the exact test. Two computations can give
 different flags only when the cut-off lies between its two statistics, so both are then closer to the
 cut-off than they are apart.
 
-The rule proposed in DECISIONS.md (D-15): a flag that differs is acceptable when the two statistics
-are within the tolerance of each other; the provider is then borderline, and is reported. Any other
-difference in a flag is a numerical disagreement between the two computations. The tolerances
-below are provisional until the maintainer has ruled.
+The rule of decision D-15 (approved 2026-11-21): a flag that differs is acceptable when the two
+statistics are within the tolerance of each other; the provider is then borderline, and is reported.
+Any other difference in a flag is a numerical disagreement between the two computations. The
+tolerances are the classes T_FLAG_Z and T_FLAG_P of testkit/tolerances.py.
 
 Tables are the engine's `provider_effects`: one row per provider with the columns named in TESTS.
 """
@@ -20,10 +20,12 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import numpy as np
 
+from ..testkit.tolerances import TOLERANCES
+
 # test: (column of the statistic, column of the flag, scale of the statistic)
 TESTS = {"score": ("score_z", "score_flag", "z"), "wald": ("wald_z", "wald_flag", "z"),
          "exact": ("exact_p", "exact_flag", "p")}
-T_FLAG = {"z": 1e-7, "p": 1e-9}        # how far apart two computations of one statistic may be
+T_FLAG = {"z": TOLERANCES["T_FLAG_Z"]["atol"], "p": TOLERANCES["T_FLAG_P"]["atol"]}
 
 
 def distance_from_cutoff(values, scale: str, level: float = 0.95) -> np.ndarray:

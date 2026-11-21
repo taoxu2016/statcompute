@@ -9,7 +9,8 @@ from .results import halved_steps, medians, summary, to_markdown, where_time_wen
 TIMING = ["model", "rows", "features", "design", "adapter", "role", "version", "status", "compare_s", "wall_s", "fit_s", "iterations",
           "executors", "tasks", "effective_cores", "share_of_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
           "driver_peak_rss_gb", "cluster_changed", "caveats", "note"]
-AGREEMENT = ["dataset", "model", "adapter", "version", "runs", "reference", "like_for_like", "max_abs_coefficient_difference",
+AGREEMENT = ["dataset", "model", "adapter", "version", "runs", "reference", "reference_halved_steps", "like_for_like",
+             "max_abs_coefficient_difference",
              "max_coefficient_difference_in_se", "max_rel_se_difference", "rel_log_likelihood_difference",
              "coefficients_over_T_COEF", "iterations"]
 
@@ -48,7 +49,9 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
              f"## Numerical agreement with {reference}\n",
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. Every run is "
              "compared; a row shows, for one adapter and version, the run furthest from the reference. "
-             "Iterations are listed as [adapter, reference] and are not a criterion.\n",
+             "Iterations are listed as [adapter, reference] and are not a criterion. Where `reference_halved_steps` is not "
+             "zero the reference may have stopped short of the root, and a difference above T_COEF is not the adapter's "
+             "(decision D-09).\n",
              to_markdown(compare_records(records, reference), AGREEMENT)]
     halved = halved_steps(records)
     if halved:

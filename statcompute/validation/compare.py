@@ -75,6 +75,8 @@ def compare_records(records: Iterable[Dict[str, Any]], reference: str = "pprof_p
             exact = r["support"]["status"] == "exact" and base["support"]["status"] == "exact"
             out.append({"dataset": dataset, "model": model, "adapter": name, "version": version, "runs": len(same),
                         "reference": reference, "like_for_like": exact,
+                        # decision D-09: a reference that halved a step may have stopped short of the root
+                        "reference_halved_steps": (base["fit"].get("extras") or {}).get("halved_steps"),
                         "notes": {name: r["support"]["notes"], reference: base["support"]["notes"]},
                         **worst})
     return out

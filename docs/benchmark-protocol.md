@@ -18,7 +18,9 @@ On the standard cluster the first read of a stored file by an executor stalls on
 section 5). A plan may set the option `warm_input` to have the stored table read once before every
 timed Spark fit: `"all"` reads every column, `"footers"` only counts the rows. The record keeps the
 mode and the seconds, and the report shows them. It is off unless a plan sets it, because it
-changes what a timing means: a fit from a table the executors have already read (D-18, proposed).
+changes what a timing means: a fit from a table the executors have already read (D-18, proposed). On the cluster on
+2026-11-21 it took that stall out of the timed calls; what remains is the first Python task of a new executor (D-20,
+proposed).
 
 A run on a cluster that changed size is kept, flagged under `caveats`, and left out of timing
 comparisons. The same list names anything else that would distort a timing: pprof_py running
