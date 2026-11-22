@@ -3,7 +3,7 @@
 What each implementation supports for the two case studies, read from its source at the commit in
 `statcompute/references/REFERENCES.lock` as it stood on 2026-11-16 (pprof `d780cf5`, pprof_py `94b5476`, pprof_spark
 `e5c9484`, whose code for these two models is unchanged at the build `d0b9bd5` pinned then). Since 2026-11-21 the lock
-pins pprof_spark at `5db844e` (round 176), which lays out and stores its blocks differently; its column below has not been
+pins pprof_spark at `b92919c` (round 177), which lays out and stores its blocks differently; its column below has not been
 read again at that commit (OPEN_ITEMS OI-37). "Read" means read in the source or its documentation; the last row of each table says
 what has actually been run here. A benchmark row is like-for-like only where the entries of the two
 implementations agree for the model that was run.

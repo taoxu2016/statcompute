@@ -8,6 +8,7 @@ import re
 import statistics
 from typing import Any, Dict, Iterable, List, Optional
 
+from .environment import short_of
 from .runner import local_path
 
 
@@ -44,11 +45,24 @@ def _matches(record: Dict[str, Any], lock: Optional[Dict[str, Any]]) -> Optional
 def caveats(record: Dict[str, Any], lock: Optional[Dict[str, Any]] = None) -> List[str]:
     """A record's caveats. With a lock, the one about the pinned build is judged against that lock,
     not against the lock of the day of the run: pinning a build afterwards clears it for the runs of
-    that build, and pinning another raises it."""
+    that build, and pinning another raises it. The caveat for a fit that ran on fewer executors than
+    its plan holds is judged here too, from what the record measured, so that the records written
+    before version 0.21.0 carry it as the later ones do."""
     kept = [c for c in (record.get("caveats") or []) if lock is None or c != NOT_PINNED]
+    short = short_of(record.get("warmup"), (record.get("environment") or {}).get("during"))
+    if short and short not in kept:
+        kept.append(short)
     if lock is not None and _matches(record, lock) is False:
         kept.append(NOT_PINNED)
     return kept
+
+
+def of_versions(records: Iterable[Dict[str, Any]], versions: Optional[Iterable[str]]) -> List[Dict[str, Any]]:
+    """The records made with the given versions of this repository; all of them when none is given.
+    A results folder keeps every session of a plan; the report of one session is a fraction of
+    the size, and it is the session that a reading is about."""
+    wanted = {str(v).strip() for v in (versions or []) if str(v).strip()}
+    return [r for r in records if not wanted or str(r.get("statcompute")) in wanted]
 
 
 def implementations(records: Iterable[Dict[str, Any]], lock: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -180,7 +194,14 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     when the task started, how much it read from storage, and how much of it was garbage
     collection or waiting for shuffle data. `input_warmed` says whether the plan had the stored
     table read once before the timed call, and `python_started` what starting the executors'
-    Python workers took there (from version 0.16.0)."""
+    Python workers took there (from version 0.16.0). `partitions` is the working set's number of
+    partitions, `partitions_from` the rule that gave it (with strata or providers: "one per core",
+    "by size", "rows per partition" or "given"; without strata how the rows were placed) and
+    `cores_at_start` the cores the cluster had when the fit counted them (from version 0.20.0):
+    with the default of decision D-21 a fit that starts on a smaller cluster has fewer partitions,
+    and this is where it shows. `executors_held` is what the warm-up that asks for the plan's
+    executors reported just before: how many it saw, of how many, after how long, and from
+    version 0.21.0 how many were counted after the reads, just before the fit, where that differs."""
     out = []
     for r in records:
         timing, spark = r.get("timing") or {}, r.get("spark") or {}
@@ -188,7 +209,10 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         phases = timing.get("phases") or {}
         during = (r.get("environment") or {}).get("during") or {}
-        seconds = ((r.get("fit") or {}).get("extras") or {}).get("evaluation_seconds") or []
+        extras = (r.get("fit") or {}).get("extras") or {}
+        execution = extras.get("execution") or {}
+        seconds = extras.get("evaluation_seconds") or []
+        held = r.get("warmup") or {}
         stages = [s for s in spark.get("heaviest_stages") or [] if s.get("max_task_s") is not None]
         slow = max(stages, key=lambda s: s["max_task_s"], default=None)
         low, high = during.get("executors_min"), during.get("executors_max")
@@ -196,7 +220,11 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         task = spark.get("slowest_task") or {}
         warmed = r.get("warm_input") or {}
         row = {"model": r["model"]["label"], "features": r["dataset"]["spec"]["features"], "adapter": r["adapter"]["name"],
-               "version": r.get("statcompute"), "wall_s": round(timing["wall_s"], 1),
+               "version": r.get("statcompute"),
+               "partitions": extras.get("partitions") or execution.get("partitions"),
+               "partitions_from": execution.get("partitions_from") or execution.get("rows_placed"),
+               "cores_at_start": execution.get("cores"),
+               "wall_s": round(timing["wall_s"], 1),
                "prepare_s": None if "prepare" not in phases else round(phases["prepare"], 1),
                "fit_s": None if "fit" not in phases else round(phases["fit"], 1),
                "other_s": round(timing["wall_s"] - sum(phases.values()), 1) if phases else None,
@@ -216,6 +244,10 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                "task_input_gb": _gb(task.get("input_bytes")),
                "executors": low if low == high else f"{low}-{high}",
                "executors_seen": ">".join(seen[:12]) + ("..." if len(seen) > 12 else ""),
+               "executors_held": None if held.get("reached") is None
+               else (f"{held['reached']} of {held.get('target')} in {held.get('seconds', 0):.0f} s"
+                     + (f", asked {held['asked']} times" if (held.get("asked") or 1) > 1 else "")
+                     + (f", {held['before_fit']} before the fit" if held.get("before_fit") not in (None, held["reached"]) else "")),
                "input_warmed": None if not warmed else (f"{warmed.get('mode')}: failed" if "error" in warmed
                                                         else f"{warmed.get('mode')} in {warmed.get('seconds', 0):.0f} s"),
                "python_started": None if warmed.get("python_seconds") is None else f"in {warmed['python_seconds']:.0f} s"}

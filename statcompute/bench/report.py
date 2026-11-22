@@ -51,7 +51,12 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
              "working set, and `fit_s` is the evaluations after it. The slowest task is the longest single task among the "
              "run's heaviest stages: far above `stage_median_task_s`, it is a stall, and `stage_tasks` says where "
              "(the input's partitions, or the working set's). A stage is named by the line of the action that ran it, "
-             "in the source of the run's version.\n",
+             "in the source of the run's version. `partitions` is the working set's; `partitions_from` is the rule that "
+             "gave the number and `cores_at_start` the cores the cluster had when the fit counted them (the engine, from "
+             "version 0.20.0): by default a fit with strata or providers has one partition per core at that moment "
+             "(decision D-21), so one that started on a smaller cluster shows fewer partitions here. `executors_held` is "
+             "what the warm-up that asks for the plan's executors reported before the fit; where it says the full number "
+             "and `executors` says fewer, the cluster lost them in the seconds between, and the run carries a caveat.\n",
              to_markdown(where_time_went(records)),
              f"## Numerical agreement with {reference}\n",
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. Every run is "

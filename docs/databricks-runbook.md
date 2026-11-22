@@ -23,12 +23,15 @@ autoscaling can also remove workers while a job is running. Either makes a timin
    A compute policy may not let you; then:
 2. Set the widget `hold_executors` to 10 in `02_run`. Before each Spark fit the runner submits rounds
    of sleeping tasks until 10 executors are attached, for at most 15 minutes, and only then starts
-   the clock. It cannot stop the autoscaler from removing workers later.
+   the clock. It cannot stop the autoscaler from removing workers later, and on this cluster it
+   does: four of the ten can go in the seconds between that count and the fit. So the runner
+   counts once more just before the fit, and a plan with the option `hold_again` asks again then.
 3. Either way, every record says what the fit actually had: `environment.during` holds the smallest
    and largest executor count, the time-averaged cores and each change, and the report's
    `share_of_cores` is executor run time over wall time and average attached cores. A run whose
-   count moved gets a caveat. Such a run is still a useful diagnostic (it shows directly how much of
-   a slow fit is the cluster arriving late) but it is not a baseline timing.
+   count moved, or that ran on fewer executors than asked for, gets a caveat. Such a run is still a
+   useful diagnostic (it shows directly how much of a slow fit is the cluster arriving late) but it
+   is not a baseline timing.
 
 None of this has been tried on a real autoscaling cluster yet (OI-02).
 
@@ -124,6 +127,14 @@ run that fails or times out is a result.
 
 
 ## What comes back
+
+For a reading, the report alone: `03_report` with `plan` set and, when the folder holds earlier
+sessions of the plan, `versions` set to the version that ran (for example `0.20.0`). Its last cell
+shows the whole text in a box to copy from; the file it writes under `results_root/reports/` is the
+same text. Do not print the report in a cell to copy it: a cell keeps the first and the last 25,600
+characters of what it prints and drops the middle, which is how the report of 2026-11-22 lost its
+table of runs. When the plan has no pprof_py in it, set `reference` to an implementation that ran,
+for instance `pprof_spark`, or the coefficients are compared with nothing.
 
 Copy `results_root/runs/` and `results_root/reports/` into `results/<date>-databricks/` in the
 repository and push. Records hold timings, metrics, coefficients of the synthetic models and

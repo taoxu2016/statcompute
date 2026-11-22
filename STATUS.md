@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-21, version 0.20.0 (round 22: D-21 approved and implemented: with strata or providers, one partition
-per core by default).
+Updated 2026-11-22, version 0.21.0 (round 23: the default of D-21 read on the cluster; the harness counts the executors
+just before a fit; a plan for three layouts without strata; the list of handoff candidates).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass.
 
 ## First cluster run, 2026-11-16
 
@@ -309,12 +309,54 @@ The maintainer approved D-21 on 2026-11-21.
 Not run on a cluster as the default. Untried there as well: partitions of 200 MB on every core of an executor at
 once, which larger data will give (OI-41).
 
+## Round 23 (2026-11-22): the default on the cluster, and a harness that sees the cluster it measures on
+
+The maintainer ran `compare_5m_warm` with version 0.20.0: the engine with the default of D-21, its prototype at one
+task per core, pprof_spark and `pprof_spark_cached`, 64 fits in one session
+(`docs/reports/2026-11-22-databricks-default-partitions.md`). The report arrived without its middle, so the task
+counts and the caveats of this session have not been read (OI-44); everything below is from the 64 rows that survived.
+
+- **The default gave one partition per core at the start in all 16 engine fits**: 40 on ten executors, 24 in the three
+  fits that ran on six.
+- **An evaluation takes what it took with 40 tasks before.** Later evaluations at a steady ten executors, medians: 2.0,
+  3.2, 1.3 and 1.9 seconds (Cox at 50 and 100 features, logistic at 50 and 100), 11 to 21 percent below the 100 tasks
+  of the earlier default.
+- **Whole calls were not shorter than in the earlier sessions**: medians of 18.4, 22.0, 17.4 and 22.0 seconds, best
+  calls of 13.3, 18.5, 12.9 and 17.2. Two sessions with the same layout differ by up to 5.6 seconds in the median, so
+  whole calls are compared inside a session only (OI-32).
+- **Against pprof_spark** the engine's whole call is 1.9 to 4.5 times shorter by the medians, 2.0 to 4.4 by the best.
+- **Against its prototype, on equal terms,** the engine is 3.5 to 5.5 seconds behind by the best call. For the logistic
+  model an evaluation costs the same in both, and the engine's call is longer mostly by the pass for the provider
+  effects, which the prototype does not have. For Cox the engine's evaluation is 0.3 and 0.6 seconds longer, about a
+  fifth (OI-35).
+- **Seven of the 64 fits ran on six executors and nothing flagged them.** The harness had counted ten; the cluster
+  lost four in the seconds before the fit. The fit after such a one starts on four new executors and takes roughly 4
+  to 7 seconds longer; the engine, which runs first on every dataset, met that in 6 of its 12 calls at a steady ten
+  (OI-43, OI-31).
+- **The same providers are flagged** in all 12 runs of each logistic dataset, at 100, 40 and 24 partitions.
+
+What round 23 changes, none of it in the engine's fits:
+
+| Part | State |
+|---|---|
+| The cluster's size before a fit | Counted again after the reads, just before the fit, and recorded. A short count is flagged, and so is a fit that ran on fewer executors than its plan holds; the report gives that caveat to the earlier records too, from what they measured. A plan can ask again (`hold_again`). Whether every plan should is decision D-22, proposed |
+| The order of a plan's runs | With `interleave` the adapters take turns, repeat by repeat |
+| The report | For every Spark fit the working set's partitions, the rule that gave them, the cores at the start and what the warm-up saw. `versions` narrows a report to one session. Notebook `03_report` shows the whole text in a box to copy and no longer leaves an empty file when rendering fails |
+| Without strata (OI-39) | Adapters `engine_cores` and `engine_cores_hash`: one partition per core, the rows placed by row identifier and sorted, or by a hash and not sorted. Plan `unstratified_cores_5m_warm` runs them beside the default in one session. In the sandbox the three agree with pprof_py within the tolerance classes. Not run on a cluster |
+| Handoff candidates | `docs/handover/README.md`: four for pprof_py and five for pprof_spark, each with its evidence and what is missing |
+
+Tried in the sandbox only (one core, local mode, mocked counts of executors): the count before the fit, asking again,
+the interleaved order. The box in `03_report` has not been seen on Databricks.
+
 ## What has not happened
 
-- No run on Databricks of the engine and its prototype, or of the engine and pprof_spark, at one task per core in one
-  session: the sizes of partition were compared for the engine alone. Version 0.20.0, in which it is the default, has
-  not run there.
-- No measurement of what an evaluation costs apart from its tasks and its rows (OI-40).
+- The session of 2026-11-22 has not been read whole: the tasks per fit, the caveats and the medians without the fits
+  on six executors are in the part of the report that did not arrive, and its coefficients were compared with nothing,
+  pprof_py not being in the plan (OI-44).
+- No run on Databricks of version 0.21.0: the count before the fit, `hold_again`, `interleave` and the two adapters
+  without strata are untried there.
+- No measurement of what an evaluation costs apart from its tasks and its rows, nor of the kernels inside a task
+  (OI-40, OI-35).
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -324,13 +366,15 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. One session of `compare_5m_warm` with version 0.20.0: every implementation, the engine and its prototype at one task
-   per core (OI-35). No restart is needed after pulling.
-2. Without strata, a task per core against the input's partitions (OI-39); what an evaluation costs when it does
-   nothing (OI-40).
-3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
-4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
-5. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20).
+1. No new run: render `compare_5m_warm` again with `versions` = `0.20.0` and `reference` = `pprof_spark`, to complete
+   the reading of 2026-11-22 (OI-44). No restart is needed after pulling.
+2. Run `unstratified_cores_5m_warm`: without strata, a task per core against the input's partitions, with and without
+   the sort (OI-39). The maintainer's ruling on D-22.
+3. The probe of what an evaluation costs and of the kernels inside a task (OI-40, OI-35): to be built, then run.
+4. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
+5. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+6. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20); the open limits
+   of D-21 (OI-41, OI-42).
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is
 coxdev's; one arrangement for distributed data was not found elsewhere. The publication plan changes accordingly.

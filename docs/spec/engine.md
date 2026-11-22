@@ -246,7 +246,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 126 tests. In the sandbox of 2026-11-21 (no R installed) 123 pass and the 3
+The repository has 130 tests. In the sandbox of 2026-11-22 (no R installed) 127 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5

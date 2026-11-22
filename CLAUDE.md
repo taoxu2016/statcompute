@@ -13,6 +13,9 @@
 - Statistical and design decisions are proposed in `DECISIONS.md`; the maintainer takes them.
 - The engine is the Python package `statcompute.engine` (D-08). It imports nothing from `lab`,
   `references` or `bench`. A change to an estimator comes with a test against pprof_py.
+- A cluster report is read from the text the maintainer sends. Check first that it is whole: every
+  section there, no table that stops in mid-row, no line saying that output was skipped. If it is
+  not, read what it holds, say which checks it cannot support, and record the reading as incomplete.
 - End of a round: update `STATUS.md`, `OPEN_ITEMS.md` and `DECISIONS.md`.
 
 Commands: `pytest -q`; `python -m statcompute.bench run --plan smoke --data-root D --results-root R`.

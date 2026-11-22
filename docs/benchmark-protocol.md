@@ -6,7 +6,7 @@ What is run, under which conditions, what is measured, and what may be concluded
 
 | Condition | Requirement | Checked by |
 |---|---|---|
-| Cluster size | Fixed for the whole plan where that is possible. On an autoscaling cluster the option `hold_executors` asks for full size before each Spark fit | Notebook `00_environment`; every record samples the executors attached during its fit (`environment.during`) and sets `cluster_changed` and a caveat when the count moved |
+| Cluster size | Fixed for the whole plan where that is possible. On an autoscaling cluster the option `hold_executors` asks for full size before each Spark fit; from version 0.21.0 the executors are counted again after the reads that precede the clock, just before the fit, and with `hold_again` the harness asks again when that count is short | Notebook `00_environment`; every record keeps what the warm-up saw and that last count (`warmup`), samples the executors attached during its fit (`environment.during`), and carries a caveat when the count before the fit was short, when the fit ran on fewer executors than the plan holds, or when the count moved |
 | Standard cluster | As it is: 32 GB driver; up to 10 workers of 16 GB; Databricks Runtime 17.3 LTS with Photon, which leaves the executors a heap of 2.2 GB | Recorded in every record |
 | Access mode | Dedicated (single user): pprof_spark's Python wrappers need py4j | `00_environment` |
 | Data | The stored synthetic table named in the record, with its checksum | Manifest |
@@ -25,9 +25,19 @@ times. The plans named `..._warm` set it. A plan without it measures a first run
 executors are attached, which is what the earlier results folders hold.
 
 A run on a cluster that changed size is kept, flagged under `caveats`, and left out of timing
-comparisons. The same list names anything else that would distort a timing: pprof_py running
-without numba, a pprof_spark build other than the pinned commit, pprof_spark's JAR on a Spark line
-it was not built for.
+comparisons. So is a run on fewer executors than its plan holds: on the standard cluster the
+warm-up can count all ten and the fit still run on six from start to end, which nothing flagged
+until version 0.21.0 (`docs/reports/2026-11-22-databricks-default-partitions.md`, section 5; 7 of 64
+fits). The report judges that caveat from what a record measured, so the records made before carry
+it too when they are rendered now. The same list names anything else that would distort a timing:
+pprof_py running without numba, a pprof_spark build other than the pinned commit, pprof_spark's JAR
+on a Spark line it was not built for.
+
+By default the repeats of an adapter follow one another, and the adapters follow one another on
+each dataset. Whatever the cluster does at a change of dataset or after a loss of executors then
+falls on the adapter that runs first. A plan with the option `interleave` has its adapters take
+turns, repeat by repeat. Comparisons are made inside one session: two sessions with the same
+layout have differed by up to 5.6 seconds in the median whole call (the same report, section 3).
 
 ## 2. Datasets
 
@@ -90,8 +100,11 @@ round's. A row is `like_for_like` only if both adapters reported `exact`.
 A results folder usually holds runs of several rounds. Every record carries the version of this
 repository that made it, and the report reads the folder version by version: the runs with their
 version, medians by version (with and without the runs that carry a caveat), and for every run of a
-Spark implementation where its time went: phases, the first evaluation beside a later one, and the
-slowest task with its stage.
+Spark implementation where its time went: phases, the first evaluation beside a later one, the
+slowest task with its stage, the working set's partitions with the rule that gave them, and what
+the warm-up saw. A report can be narrowed to the sessions of chosen versions (`versions` in
+notebook `03_report`, `--versions` on the command line): the report of a whole folder has grown
+past what a notebook cell prints, and the one of 2026-11-22 lost its middle that way.
 
 Three things are never concluded from this harness:
 
@@ -133,8 +146,9 @@ single-machine fit leaves the executors idle, and an autoscaling cluster shrinks
 | `unstratified_5m` | The two Cox datasets of `compare_5m`, without strata; the engine, pprof_spark and pprof_py | The fit without strata on the cluster |
 | `reference_stop_5m` | pprof_py alone on the two Cox datasets of `unstratified_5m`, two repeats | How many steps its Newton loop halved (OI-24). Needs no executors; about 18 GB on the driver at 100 features |
 | `engine_partitions_5m_warm` | The engine at its default (one partition per core, D-21) and at 50,000, 125,000 and 250,000 rows per partition (adapters `engine`, `engine_50k`, `engine_125k`, `engine_250k`) on the datasets of `compare_5m`, four repeats, with `warm_input` | What a task costs on the cluster apart from its rows (OI-25). Ran on 2026-11-21: `docs/reports/2026-11-21-databricks-partition-size.md` |
-| `compare_5m_warm` | `compare_5m` for the Spark implementations only, four repeats, with `warm_input` | Timings clear of an executor's first read of a file (D-18) |
+| `compare_5m_warm` | `compare_5m` for the Spark implementations only, four repeats, with `warm_input` | Timings clear of an executor's first read of a file (D-18). Its session of 2026-11-22, the first with the default of D-21: `docs/reports/2026-11-22-databricks-default-partitions.md` |
 | `unstratified_5m_warm`, `unstratified_5m_warm_input` | `unstratified_5m` for the engine only, four repeats, with `warm_input`; the second leaves the rows in the input's partitions | The two layouts without strata side by side (D-10) |
+| `unstratified_cores_5m_warm` | The two Cox datasets without strata, the engine three ways in one session, taking turns (`interleave`), four repeats: the input's partitions (`engine`, the default), one partition per core with the rows placed by row identifier and sorted (`engine_cores`), one per core with the rows placed by a hash and not sorted (`engine_cores_hash`). Asks again for the executors when they are short before a fit (`hold_again`) | Whether a task per core pays without strata, and what the sort costs (OI-39). Not run yet |
 
 Single-machine implementations are skipped by the memory guard where they cannot fit. At 180
 features pprof_py is at its ceiling near 5 million rows on a 32 GB driver, and pprof (R), which

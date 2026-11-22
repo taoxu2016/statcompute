@@ -62,7 +62,7 @@ CoxPH("time", "event", features, strata="provider", baseline=True).fit(frame).ba
 
 ```
 pip install -e ".[test]"                     # needs Java 17+ for PySpark
-pytest -q                                     # 126 tests, about six minutes
+pytest -q                                     # 130 tests, about six minutes
 python -m statcompute.bench run --plan smoke --data-root /tmp/sc/data --results-root /tmp/sc/results
 python -m statcompute.bench report --results-root /tmp/sc/results
 ```
@@ -89,6 +89,8 @@ then the `smoke` plan through `01_generate`, `02_run` and `03_report`, then the 
 | `docs/reference-inspection.md` | Baseline functionality and the performance evidence so far |
 | `docs/databricks-runbook.md` | Running the benchmarks on the standard cluster |
 | `docs/research/` | The research roadmap and its evidence |
+| `docs/reports/` | What each run on the cluster showed, one document per reading |
+| `docs/handover/` | What pprof_py or pprof_spark could take from here, with the evidence and what is missing for each |
 | `STATUS.md`, `DECISIONS.md`, `OPEN_ITEMS.md` | State of the work; decisions proposed and taken; what is open |
 
 Licence: MIT, see `LICENSE`.

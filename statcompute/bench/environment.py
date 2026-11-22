@@ -131,6 +131,26 @@ def attached(spark):
     return executors, sc.defaultParallelism
 
 
+def short_of(warmup: Optional[Dict[str, Any]], during: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The caveat for a fit that never had the executors its plan holds, or None. `hold_at` can
+    report the full number and the fit still run on fewer from its first moment to its last: the
+    count did not move during the fit, so nothing else flags it. Seen on the cluster in every
+    session of plan compare_5m_warm (docs/reports/2026-11-22-databricks-default-partitions.md,
+    section 5). From version 0.21.0 the runner counts the executors again just before the fit and
+    says so itself; this is for the records made before, and for a loss in the last moment. Not
+    raised where the warm-up or that count reported fewer, which has its own caveat, nor where
+    the count moved during the fit, which has another."""
+    target, high = (warmup or {}).get("target"), (during or {}).get("executors_max")
+    if not target or (warmup or {}).get("skipped") or high is None or high >= target:
+        return None
+    for seen in ((warmup or {}).get("reached"), (warmup or {}).get("before_fit")):
+        if seen is not None and seen < target:
+            return None
+    if (during or {}).get("executors_min") != high:
+        return None
+    return f"the fit ran on {high} of the {target} executors the plan holds"
+
+
 def hold_at(spark, executors: int, timeout_s: float = 900.0, task_seconds: float = 15.0,
             allow_local: bool = False, log=print) -> Dict[str, Any]:
     """Ask an autoscaling cluster for `executors` workers and wait until they are attached.

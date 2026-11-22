@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .report import render
-from .results import load_records
+from .results import load_records, of_versions
 from .runner import load_plan, run_plan
 
 
@@ -23,6 +23,8 @@ def main(argv=None) -> int:
     report.add_argument("--results-root", required=True)
     report.add_argument("--plan", default=None)
     report.add_argument("--reference", default="pprof_py")
+    report.add_argument("--versions", default=None,
+                        help="versions of this repository whose records to report, comma-separated (default: all)")
     report.add_argument("--out", default=None)
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -38,7 +40,8 @@ def main(argv=None) -> int:
                                            f"{'' if not r['timing'] else round(r['timing']['wall_s'], 2)}"))
         spark.stop()
         return 0
-    text = render(load_records(args.results_root, args.plan), args.reference)
+    records = of_versions(load_records(args.results_root, args.plan), (args.versions or "").split(","))
+    text = render(records, args.reference)
     if args.out:
         with open(args.out, "w") as f:
             f.write(text)

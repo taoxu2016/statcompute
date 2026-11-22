@@ -110,16 +110,31 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
     sc = spark.sparkContext
     group = f"statcompute-{run_id}"
     metrics = SparkMetrics(spark)
-    if options.get("hold_executors") and adapter.kind == "spark":
-        # an autoscaling cluster: ask for its full size before the clock starts
-        record["warmup"] = environment.hold_at(spark, int(options["hold_executors"]),
-                                               float(options.get("hold_timeout_s", 900)))
-    if options.get("warm_input") and adapter.kind == "spark":
-        # every executor reads the stored table once before the clock starts (OI-31); off unless the plan asks
-        try:
-            record["warm_input"] = environment.warm_input(spark, dataset, str(options["warm_input"]))
-        except Exception as failure:
-            record["warm_input"] = {"mode": str(options["warm_input"]), "error": f"{type(failure).__name__}: {failure}"[:300]}
+    held = bool(options.get("hold_executors")) and adapter.kind == "spark"
+    asked = 0
+    while True:
+        if held:
+            # an autoscaling cluster: ask for its full size before the clock starts
+            warm = environment.hold_at(spark, int(options["hold_executors"]), float(options.get("hold_timeout_s", 900)))
+            earlier = record["warmup"] or {}
+            record["warmup"] = dict(warm, seconds=warm.get("seconds", 0.0) + earlier.get("seconds", 0.0),
+                                    rounds=warm.get("rounds", 0) + earlier.get("rounds", 0))
+            asked += 1
+        if options.get("warm_input") and adapter.kind == "spark":
+            # every executor reads the stored table once before the clock starts (OI-31); off unless the plan asks
+            try:
+                record["warm_input"] = environment.warm_input(spark, dataset, str(options["warm_input"]))
+            except Exception as failure:
+                record["warm_input"] = {"mode": str(options["warm_input"]), "error": f"{type(failure).__name__}: {failure}"[:300]}
+        if not held or record["warmup"].get("skipped"):
+            break
+        # The cluster can lose executors in the seconds after the warm-up saw them all (7 of the 64 runs of
+        # 2026-11-22 then ran on six of ten). So they are counted again here, after the reads and just before
+        # the fit, and with the option `hold_again` the harness asks again, that many times at most.
+        record["warmup"].update(before_fit=environment.attached(spark)[0], asked=asked)
+        now = record["warmup"]["before_fit"]
+        if now is None or now >= int(options["hold_executors"]) or asked > int(options.get("hold_again", 0)):
+            break
     if adapter.kind == "spark":
         try:
             record["dataset"]["input_partitions"] = int(dataset.frame(spark).rdd.getNumPartitions())
@@ -193,8 +208,12 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
         caveats.append("the cluster changed size during the fit" if low == high or low is None
                        else f"executors ranged from {low} to {high} during the fit")
     warm = record.get("warmup") or {}
-    if warm.get("reached") is not None and warm["reached"] < warm["target"]:
-        caveats.append(f"the cluster had {warm['reached']} of {warm['target']} executors when the fit started")
+    at_start = warm.get("before_fit") if warm.get("before_fit") is not None else warm.get("reached")
+    if at_start is not None and at_start < warm["target"]:
+        caveats.append(f"the cluster had {at_start} of {warm['target']} executors when the fit started")
+    short = environment.short_of(warm, during)
+    if short:
+        caveats.append(short)
     if record["adapter"].get("matches_pin") is False:
         caveats.append("the installed build is not the commit pinned in REFERENCES.lock")
     record["caveats"] = caveats
@@ -260,14 +279,22 @@ def run_plan(spark, plan: Dict[str, Any], data_root: str, results_root: str,
             if spec.dataset_id() not in stored:
                 stored[spec.dataset_id()] = materialize(spark, spec, data_root)
             dataset = stored[spec.dataset_id()]
-            for adapter_name in group:
-                for repeat in range(int(plan.get("repeats", 1))):
-                    record = run_one(spark, plan["name"], adapter_name, dataset, model, repeat, options,
-                                     checkpoint=lambda partial: write_record(results_root, partial))
-                    record["file"] = write_record(results_root, record)
-                    records.append(record)
-                    if on_record:
-                        on_record(record)
-                    if record["status"] != "ok":
-                        break  # a repeat of a run that did not complete adds nothing
+            # By default an adapter's repeats follow one another. With the option `interleave` the adapters
+            # take turns, repeat by repeat, so that what the cluster does over a session (new executors after a
+            # change of dataset, a loss of executors) falls on all of them and not on the one that happens to go first.
+            repeats = range(int(plan.get("repeats", 1)))
+            turns = ([(a, k) for k in repeats for a in group] if options.get("interleave")
+                     else [(a, k) for a in group for k in repeats])
+            stopped = set()
+            for adapter_name, repeat in turns:
+                if adapter_name in stopped:
+                    continue  # a repeat of a run that did not complete adds nothing
+                record = run_one(spark, plan["name"], adapter_name, dataset, model, repeat, options,
+                                 checkpoint=lambda partial: write_record(results_root, partial))
+                record["file"] = write_record(results_root, record)
+                records.append(record)
+                if on_record:
+                    on_record(record)
+                if record["status"] != "ok":
+                    stopped.add(adapter_name)
     return records

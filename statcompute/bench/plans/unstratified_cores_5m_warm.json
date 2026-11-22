@@ -1,0 +1,14 @@
+{
+ "name": "unstratified_cores_5m_warm",
+ "description": "Cox without strata at 5 million rows, three layouts of the rows in one session (OPEN_ITEMS OI-39): the input's own partitions, which is the default (decision D-19); one partition per core with the rows placed by row identifier and sorted by it; one partition per core with the rows placed by a hash of the row and not sorted. Four repeats, the three taking turns repeat by repeat, with the stored table read and the Python workers started before every timed fit, and the cluster asked once more for its ten executors when it is found short just before a fit.",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {
+  "cox": [{"family": "cox", "ties": "breslow", "strata": null, "convergence": "default"}]
+ },
+ "adapters": ["engine", "engine_cores", "engine_cores_hash"],
+ "repeats": 4,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "engine_partitions": "input", "interleave": true, "hold_again": 1}
+}

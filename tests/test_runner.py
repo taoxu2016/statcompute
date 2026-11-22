@@ -363,7 +363,126 @@ def test_a_run_says_how_many_executors_it_had_and_flags_a_short_cluster(spark, t
     plan = dict(PLAN, adapters=["lab_spark"], options={"hold_executors": 10})
     record = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))[0]
     assert record["status"] == "ok" and record["warmup"]["reached"] == 4
-    assert record["caveats"] == ["the cluster had 4 of 10 executors when the fit started"]
+    # round 23: the executors are counted again after the reads, just before the fit, and that count is the one flagged
+    assert record["warmup"]["before_fit"] == 0 and record["warmup"]["asked"] == 1
+    assert record["caveats"] == ["the cluster had 0 of 10 executors when the fit started"]
     during = record["environment"]["during"]
     assert during["executors_min"] == during["executors_max"] == 0 and during["cores_time_average"] > 0
     assert record["environment"]["cluster_changed"] is False
+
+
+def test_a_fit_on_fewer_executors_than_the_plan_holds_is_flagged(spark, tmp_path, monkeypatch):
+    """Round 23: the warm-up can report the full number and the fit still run on fewer from its first
+    moment to its last. The count did not move during the fit, so nothing flagged it: on the cluster
+    7 of the 64 runs of 2026-11-22 ran on six of ten executors without a caveat."""
+    from statcompute.bench import environment
+    from statcompute.bench.results import caveats, medians
+
+    short = "the fit ran on 6 of the 10 executors the plan holds"
+    held = {"target": 10, "reached": 10, "seconds": 0.0, "rounds": 0}
+    assert environment.short_of(held, {"executors_min": 6, "executors_max": 6}) == short
+    assert environment.short_of(held, {"executors_min": 10, "executors_max": 10}) is None
+    assert environment.short_of(held, {"executors_min": 6, "executors_max": 10}) is None                 # it moved: another caveat says so
+    assert environment.short_of(dict(held, reached=7), {"executors_min": 7, "executors_max": 7}) is None  # the warm-up said so already
+    assert environment.short_of({"target": 10, "reached": None, "skipped": "local session"}, {"executors_min": 0, "executors_max": 0}) is None
+    assert environment.short_of(None, {"executors_min": 6, "executors_max": 6}) is None                  # the plan holds nothing
+    # a record written before the caveat existed gets it when it is read, and leaves the runs without a caveat
+    old = a_record("engine", "0.20.0", 18.6, {"prepare": 8.0, "fit": 9.0}, [0.1, 0.2])
+    old["warmup"] = held
+    old["environment"]["during"].update(executors_min=6, executors_max=6)
+    fair = a_record("engine", "0.20.0", 13.3, {"prepare": 5.4, "fit": 6.2}, [0.1, 0.2])
+    assert caveats(old) == [short] and caveats(dict(old, caveats=[short])) == [short] and caveats(fair) == []
+    row = medians([old, fair])[0]
+    assert row["runs"] == 2 and row["runs_without_caveat"] == 1 and row["median_compare_s_without_caveat"] == 13.3
+    # A run made now counts the executors again after the reads, just before the fit, and says what it saw.
+    calls = []
+
+    def hold(spark, executors, timeout):
+        calls.append(executors)
+        return dict(held, target=executors, reached=executors, seconds=2.0, rounds=1)
+
+    monkeypatch.setattr(environment, "hold_at", hold)
+    monkeypatch.setattr(environment, "attached", lambda spark: (6, 24))
+    plan = dict(PLAN, adapters=["lab_spark"], options={"hold_executors": 10})
+    record = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "a"))[0]
+    assert record["status"] == "ok" and calls == [10]
+    assert record["warmup"]["before_fit"] == 6 and record["warmup"]["asked"] == 1
+    assert record["caveats"] == ["the cluster had 6 of 10 executors when the fit started"] == caveats(record)
+    from statcompute.bench.results import where_time_went
+    assert where_time_went([record])[0]["executors_held"] == "10 of 10 in 2 s, 6 before the fit"
+    # With `hold_again` it asks again, that many times at most, and adds up what the asking cost.
+    del calls[:]
+    counts = iter([(6, 24), (10, 40)] + [(10, 40)] * 50)
+    monkeypatch.setattr(environment, "attached", lambda spark: next(counts))
+    again = run_plan(spark, dict(plan, options={"hold_executors": 10, "hold_again": 1}), str(tmp_path / "data"), str(tmp_path / "b"))[0]
+    assert calls == [10, 10] and again["warmup"]["asked"] == 2 and again["warmup"]["before_fit"] == 10
+    assert again["warmup"]["seconds"] == 4.0 and again["warmup"]["rounds"] == 2 and again["caveats"] == []
+    assert where_time_went([again])[0]["executors_held"] == "10 of 10 in 4 s, asked 2 times"
+    del calls[:]
+    monkeypatch.setattr(environment, "attached", lambda spark: (6, 24))
+    never = run_plan(spark, dict(plan, options={"hold_executors": 10, "hold_again": 2}), str(tmp_path / "data"), str(tmp_path / "c"))[0]
+    assert calls == [10, 10, 10] and never["warmup"]["asked"] == 3
+    assert never["caveats"] == ["the cluster had 6 of 10 executors when the fit started"]
+
+
+def test_the_adapters_of_a_plan_can_take_turns(spark, tmp_path):
+    """Round 23: with `interleave` the repeats of the adapters alternate, so that what the cluster does
+    over a session does not fall on the adapter that goes first."""
+    plan = dict(PLAN, adapters=["lab_numpy", "always_fails", "pprof_py"], repeats=2)
+    adapters.register("always_fails", AlwaysFails)
+    one_after_another = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "a"))
+    assert [(r["adapter"]["name"], r["repeat"]) for r in one_after_another] == [
+        ("lab_numpy", 0), ("lab_numpy", 1), ("always_fails", 0), ("pprof_py", 0), ("pprof_py", 1)]
+    in_turns = run_plan(spark, dict(plan, options={"interleave": True}), str(tmp_path / "data"), str(tmp_path / "b"))
+    assert [(r["adapter"]["name"], r["repeat"]) for r in in_turns] == [
+        ("lab_numpy", 0), ("always_fails", 0), ("pprof_py", 0), ("lab_numpy", 1), ("pprof_py", 1)]   # a failed fit is not repeated
+
+
+def test_without_strata_the_rows_can_be_spread_over_one_partition_per_core(spark, tmp_path):
+    """Round 23 (OI-39): two adapters that give a fit without strata as many partitions as a fit with
+    strata has by default, one placing the rows by row identifier and sorting them, one by a hash of
+    the row without the sort. Same estimates; with strata they stand aside."""
+    from statcompute.bench.results import where_time_went
+
+    assert adapters.get("engine_cores").spread == "row_id" and adapters.get("engine_cores_hash").spread == "hash"
+    assert adapters.get("engine").spread is None
+    plan = {"name": "t", "datasets": [{"family": "cox", "rows": 3000, "providers": 12, "features": 3}],
+            "models": {"cox": [{"family": "cox", "ties": "breslow", "strata": None, "convergence": "default"},
+                               {"family": "cox", "ties": "breslow", "strata": "provider", "convergence": "default"}]},
+            "adapters": ["engine", "engine_cores", "engine_cores_hash", "pprof_py"], "repeats": 1,
+            "options": {"engine_partitions": "input", "interleave": True}}
+    records = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))
+    plain = {r["adapter"]["name"]: r for r in records if r["model"]["strata"] is None}
+    cores = spark.sparkContext.defaultParallelism
+    placed = {name: plain[name]["fit"]["extras"]["execution"]["rows_placed"] for name in ("engine", "engine_cores", "engine_cores_hash")}
+    assert placed == {"engine": "as in the input", "engine_cores": "by row_id", "engine_cores_hash": "by a hash of the row"}
+    assert plain["engine_cores"]["fit"]["extras"]["partitions"] == plain["engine_cores_hash"]["fit"]["extras"]["partitions"] == cores
+    assert plain["engine_cores_hash"]["adapter"]["without_strata"].endswith("not sorted") and "without_strata" not in plain["engine"]["adapter"]
+    compared = compare_records(records, "pprof_py")
+    assert sorted(row["adapter"] for row in compared) == ["engine", "engine", "engine_cores", "engine_cores_hash"]
+    for row in compared:
+        assert row["coefficients_over_T_COEF"] <= 1 and row["like_for_like"], row
+    with_strata = {r["adapter"]["name"]: r["status"] for r in records if r["model"]["strata"]}
+    assert with_strata == {"engine": "ok", "engine_cores": "unsupported", "engine_cores_hash": "unsupported", "pprof_py": "ok"}
+    # the report says how each working set was laid out
+    shown = {(row["adapter"], row["model"].split("/")[1]): row for row in where_time_went(records)}
+    assert shown[("engine_cores", "unstratified")]["partitions"] == cores and shown[("engine_cores", "unstratified")]["partitions_from"] == "by row_id"
+    assert shown[("engine", "stratified")]["partitions_from"] == "one per core" and shown[("engine", "stratified")]["cores_at_start"] == cores
+
+
+def test_a_report_can_be_narrowed_to_the_sessions_of_some_versions():
+    """Round 23: a results folder keeps every session of a plan; the report of one is a third of the size."""
+    from statcompute.bench.results import of_versions, where_time_went
+
+    records = [a_record("engine", version, 10.0, {"prepare": 4.0, "fit": 5.0}, [0.1, 0.2]) for version in ("0.16.0", "0.20.0", "0.20.0")]
+    assert len(of_versions(records, None)) == len(of_versions(records, [""])) == 3
+    assert [r["statcompute"] for r in of_versions(records, ["0.20.0"])] == ["0.20.0", "0.20.0"]
+    assert len(of_versions(records, [" 0.16.0", "0.20.0 "])) == 3 and of_versions(records, ["0.21.0"]) == []
+    # what the warm-up reported before a fit is in the table of where the time went
+    records[1]["warmup"] = {"target": 10, "reached": 10, "seconds": 0.4, "rounds": 0}
+    records[1]["fit"]["extras"] = {"partitions": 24, "execution": {"partitions": 24, "partitions_from": "one per core", "cores": 24}}
+    rows = where_time_went(records)
+    assert rows[1]["executors_held"] == "10 of 10 in 0 s" and rows[0]["executors_held"] is None
+    assert (rows[1]["partitions"], rows[1]["partitions_from"], rows[1]["cores_at_start"]) == (24, "one per core", 24)
+    text = render(of_versions(records, ["0.20.0"]), title="t")
+    assert "executors_held" in text and "| 24 | one per core | 24 |" in text and "0.16.0" not in text

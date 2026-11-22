@@ -17,7 +17,7 @@ dbutils.widgets.text("adapters", "", "Implementations, comma-separated (empty: a
 dbutils.widgets.text("max_rows", "5000000", "Largest dataset to run now (rows)")
 dbutils.widgets.text("families", "", "Model families, comma-separated (empty: both)")
 dbutils.widgets.dropdown("cache_input", "false", ["false", "true"], "Cache the input table before pprof_spark fits")
-dbutils.widgets.text("lab_rows_per_partition", "", "Rows per partition for lab_spark (empty: 50000)")
+dbutils.widgets.text("lab_rows_per_partition", "", "Rows per partition for lab_spark (empty: the plan's value, or 50000 when it names none)")
 dbutils.widgets.text("hold_executors", "", "On an autoscaling cluster: executors to ask for before each Spark fit (empty: none)")
 
 # COMMAND ----------
