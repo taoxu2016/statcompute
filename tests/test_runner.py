@@ -477,7 +477,7 @@ def test_every_plan_that_holds_the_cluster_asks_again(spark):
         if options.get("hold_executors"):
             holding.append(os.path.basename(path))
             assert options.get("hold_again") == 1 and options.get("hold_settle_s") == 3, path
-    assert len(holding) == 7 and "compare_5m_warm.json" in holding
+    assert len(holding) == 8 and "compare_5m_warm.json" in holding and "pass_cost_5m_warm.json" in holding
 
 
 def test_the_adapters_of_a_plan_can_take_turns(spark, tmp_path):
@@ -504,25 +504,31 @@ def test_without_strata_the_rows_can_be_spread_over_one_partition_per_core(spark
     plan = {"name": "t", "datasets": [{"family": "cox", "rows": 3000, "providers": 12, "features": 3}],
             "models": {"cox": [{"family": "cox", "ties": "breslow", "strata": None, "convergence": "default"},
                                {"family": "cox", "ties": "breslow", "strata": "provider", "convergence": "default"}]},
-            "adapters": ["engine", "engine_cores", "engine_cores_hash", "pprof_py"], "repeats": 1,
-            "options": {"engine_partitions": "input", "interleave": True}}
+            "adapters": ["engine", "engine_input", "engine_cores", "engine_cores_hash", "pprof_py"], "repeats": 1,
+            "options": {"interleave": True}}
     records = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))
     plain = {r["adapter"]["name"]: r for r in records if r["model"]["strata"] is None}
     cores = spark.sparkContext.defaultParallelism
-    placed = {name: plain[name]["fit"]["extras"]["execution"]["rows_placed"] for name in ("engine", "engine_cores", "engine_cores_hash")}
-    assert placed == {"engine": "as in the input", "engine_cores": "by row_id", "engine_cores_hash": "by a hash of the row"}
+    names = ("engine", "engine_input", "engine_cores", "engine_cores_hash")
+    placed = {name: plain[name]["fit"]["extras"]["execution"]["rows_placed"] for name in names}
+    assert placed == {"engine": "by a hash of the row", "engine_input": "as in the input", "engine_cores": "by row_id",
+                      "engine_cores_hash": "by a hash of the row"}                  # the default is the hash layout (decision D-23)
+    assert plain["engine"]["fit"]["extras"]["partitions"] == cores and "without_strata" not in plain["engine"]["adapter"]
     assert plain["engine_cores"]["fit"]["extras"]["partitions"] == plain["engine_cores_hash"]["fit"]["extras"]["partitions"] == cores
-    assert plain["engine_cores_hash"]["adapter"]["without_strata"].endswith("not sorted") and "without_strata" not in plain["engine"]["adapter"]
+    assert plain["engine_cores_hash"]["adapter"]["without_strata"].endswith("not sorted")
     compared = compare_records(records, "pprof_py")
-    assert sorted(row["adapter"] for row in compared) == ["engine", "engine", "engine_cores", "engine_cores_hash"]
+    assert sorted(row["adapter"] for row in compared) == ["engine", "engine", "engine_cores", "engine_cores_hash", "engine_input"]
     for row in compared:
         assert row["coefficients_over_T_COEF"] <= 1 and row["like_for_like"], row
     with_strata = {r["adapter"]["name"]: r["status"] for r in records if r["model"]["strata"]}
-    assert with_strata == {"engine": "ok", "engine_cores": "unsupported", "engine_cores_hash": "unsupported", "pprof_py": "ok"}
+    assert with_strata == {"engine": "ok", "engine_input": "unsupported", "engine_cores": "unsupported", "engine_cores_hash": "unsupported",
+                           "pprof_py": "ok"}
     # the report says how each working set was laid out
     shown = {(row["adapter"], row["model"].split("/")[1]): row for row in where_time_went(records)}
     assert shown[("engine_cores", "unstratified")]["partitions"] == cores and shown[("engine_cores", "unstratified")]["partitions_from"] == "by row_id"
     assert shown[("engine", "stratified")]["partitions_from"] == "one per core" and shown[("engine", "stratified")]["cores_at_start"] == cores
+    assert shown[("engine", "unstratified")]["partitions_from"] == "one per core" and shown[("engine", "unstratified")]["cores_at_start"] == cores
+    assert shown[("engine_input", "unstratified")]["partitions_from"] == "as in the input"
 
 
 def test_a_report_can_be_narrowed_to_the_sessions_of_some_versions():

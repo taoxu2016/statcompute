@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from ..validation import compare_records, flags_across_records
 from .. import references
-from .results import halved_steps, implementations, medians, summary, to_markdown, where_time_went
+from .results import pass_costs, halved_steps, implementations, medians, summary, to_markdown, where_time_went
 
 TIMING = ["model", "rows", "features", "design", "adapter", "role", "version", "status", "compare_s", "wall_s", "fit_s", "iterations",
           "executors", "tasks", "effective_cores", "share_of_cores", "gc_s", "shuffle_gb", "worst_straggler_ratio",
@@ -58,6 +58,20 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
              "what the warm-up that asks for the plan's executors reported before the fit; where it says the full number "
              "and `executors` says fewer, the cluster lost them in the seconds between, and the run carries a caveat.\n",
              to_markdown(where_time_went(records)),
+             *([] if not pass_costs(records) else [
+                 "## What a pass costs\n",
+                 "The probe `engine_passes` builds the engine's working set and runs a ladder of passes over it, each kind "
+                 "several times, the kinds taking turns. Each kind adds one thing to the kind before it: `job` is as many "
+                 "tasks as there are partitions, in the JVM, that do nothing; `idle` is Python tasks that are sent one byte a "
+                 "row; `rows` receives the rows and stacks them as the engine does; `kernel` also runs the engine's kernel, "
+                 "BLAS held to one thread as the engine holds it; `kernel_free` runs it without that limit; `kernel_plain` runs "
+                 "the prototype's Cox kernel on the same rows; `evaluation` is the engine's own pass, its results collected "
+                 "and summed; `half` is `kernel` on every second partition, one task for every two cores. `seconds` are the "
+                 "passes as the driver saw them. The other columns come from the tasks, each the median over the passes: "
+                 "`task_s` and `slowest_task_s` are a task's own seconds from its first line to its last, `receive_s` the "
+                 "part until its rows were stacked, `kernel_s` and `slowest_kernel_s` the part in the kernel. "
+                 "`around_tasks_s` is a pass's seconds less its slowest task's: what the job costs outside its tasks.\n",
+                 to_markdown(pass_costs(records))]),
              f"## Numerical agreement with {reference}\n",
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. Every run is "
              "compared; a row shows, for one adapter and version, the run furthest from the reference. "

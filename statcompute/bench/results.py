@@ -140,7 +140,7 @@ def medians(records: Iterable[Dict[str, Any]], lock: Optional[Dict[str, Any]] = 
     over those without a caveat. The version separates the rounds of the engine in one results folder."""
     groups: Dict[Any, List[Dict[str, Any]]] = {}
     for row in summary(records, lock):
-        if row["status"] == "ok" and row["compare_s"] is not None:
+        if row["status"] == "ok" and row["compare_s"] is not None and row["role"] != "probe":    # a probe's seconds are not a fit's
             groups.setdefault((row["model"], row["rows"], row["features"], row["adapter"], row["version"]), []).append(row)
     def order(key):                                   # versions as numbers, so that 0.10.0 follows 0.9.0
         model, rows, features, adapter, version = key
@@ -264,6 +264,36 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                                                         else f"{warmed.get('mode')} in {warmed.get('seconds', 0):.0f} s"),
                "python_started": None if warmed.get("python_seconds") is None else f"in {warmed['python_seconds']:.0f} s"}
         out.append(row)
+    return out
+
+
+def pass_costs(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The records of the probe of what a pass costs (`statcompute.lab.passes`), one row for every
+    kind of pass in every record: the seconds of each pass as the driver saw it and their median;
+    and from the tasks themselves, each the median over the passes: the median and the largest of
+    a task's own seconds, the median of those it spent receiving and stacking its rows, and the
+    median and the largest of those in the kernel. `around_tasks_s` is the median over the passes
+    of a pass's seconds less its slowest task's: what the job costs outside its tasks."""
+    middle = lambda values: None if not values else round(statistics.median(values), 2)   # noqa: E731
+    out = []
+    for r in records:
+        extras = (r.get("fit") or {}).get("extras") or {}
+        if r.get("status") != "ok" or not extras.get("ladder"):        # "ladder" is the probe's; the prototypes count their "passes"
+            continue
+        during = (r.get("environment") or {}).get("during") or {}
+        low, high = during.get("executors_min"), during.get("executors_max")
+        for kind in extras.get("pass_kinds") or list(extras["ladder"]):
+            found = extras["ladder"][kind]
+            seconds, slowest = found.get("seconds") or [], found.get("task_max_s") or []
+            out.append({"model": r["model"]["label"], "features": r["dataset"]["spec"]["features"], "version": r.get("statcompute"),
+                        "partitions": extras.get("partitions"), "executors": low if low == high else f"{low}-{high}",
+                        "kind": kind, "passes": len(seconds), "tasks": middle(found.get("tasks")),
+                        "seconds": " ".join(f"{s:.2f}" for s in seconds), "median_s": middle(seconds),
+                        "task_s": middle(found.get("task_median_s")), "slowest_task_s": middle(slowest),
+                        "receive_s": middle(found.get("receive_median_s")), "kernel_s": middle(found.get("kernel_median_s")),
+                        "slowest_kernel_s": middle(found.get("kernel_max_s")),
+                        "around_tasks_s": middle([s - t for s, t in zip(seconds, slowest)]) if len(slowest) == len(seconds) else None,
+                        "cores": "-".join(str(c) for c in sorted(set(found.get("cores") or []))[::max(1, len(set(found.get("cores") or [])) - 1)])})
     return out
 
 

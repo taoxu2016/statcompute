@@ -1,4 +1,4 @@
-# The engine: specification, version 0.8
+# The engine: specification, version 0.9
 
 `statcompute.engine` is the new implementation of the two case studies. This document says what
 it estimates, how it computes, what has been verified and what is missing. Evidence is from the
@@ -54,8 +54,8 @@ descending and row identifier. One pass returns the log-likelihood, the score an
 
 Without strata every risk set spans the whole table, so no partition can hold one. The engine then
 uses the fact that times take few distinct values (days over some years: 1,825). It needs at most
-`max_times` distinct values, 20,000 by default. No pass needs the rows in any order, and by default
-they stay in the input's partitions (section 4).
+`max_times` distinct values, 20,000 by default. No pass needs the rows in any order; by default
+they are spread over one partition per core by a hash of the row (section 4).
 
 *Pass 1.* Every batch of rows adds (r_i, r_i x_i) to a table at the row's exit time; with Efron
 ties the same for the rows that died; with entry times the same at the row's entry time. That is
@@ -158,14 +158,18 @@ providers.
   partitions), fixes it by the data and the settings alone, whatever the executors attached or the
   input's files; until version 0.7 that was the default, at 50,000 rows. The model's settings and
   its `execution` say which rule gave the number, and the cores.
-- **The working set without strata** (decision D-19). By default the rows stay in the input's own
-  partitions: no shuffle and no sort, as many tasks per pass as the input has partitions. On request
-  they are placed by row identifier (by a hash of the whole row when no `row_id` is given) and sorted
-  by it: `partitions` as a number, or `"rows"` for ceil(rows / `rows_per_partition`). That layout was
-  the default of version 0.6. On the cluster it cost a shuffle and a sort when the working set was
-  built and made every evaluation slower, by 0.6 seconds at 50 features and 2.3 at 100
-  (`docs/reports/2026-11-21-databricks-warm-runs.md`, section 4); what it gives is fits that repeat
-  bit for bit.
+- **The working set without strata** (decisions D-19 and D-23). By default the rows are spread over
+  one partition for every core the cluster has when the fit starts, and more only when a partition
+  would hold over 200 MB of features, as with strata; they are placed by a hash of the whole row
+  and not sorted: one shuffle, no sort. `partitions="input"` leaves them in the input's own
+  partitions, which was the default of versions 0.7 and 0.8: no shuffle, as many tasks per pass as
+  the input has partitions. A number, or `"rows"` for ceil(rows / `rows_per_partition`), places
+  them by row identifier (by a hash of the whole row when no `row_id` is given) and sorts them by
+  it. That layout was the default of version 0.6. At 50,000 rows a partition it made every
+  evaluation slower than the input's partitions, by 0.6 seconds at 50 features and 2.3 at 100
+  (`docs/reports/2026-11-21-databricks-warm-runs.md`, section 4); at one partition per core its
+  evaluations are as short as the default's and its sort costs about 2 seconds when the working
+  set is built. What it gives is fits that repeat bit for bit.
 - **Jobs.** A light job reads every column except the features. It counts the rows, refuses rows
   that cannot be fitted and, without strata, collects the distinct times in the same pass. The
   working set is then built by the first pass over it, in that pass's job: the first evaluation for
@@ -192,8 +196,8 @@ providers.
   Cox, also from a repartitioned input). By default the number of partitions follows the cluster's
   cores, so that holds between fits on the same number of cores; to have it whatever the cluster,
   give `rows_per_partition` or `partitions`. Without strata it holds for the layout by row
-  identifier, which must be asked for; with the default, the input's partitions, fits agree to
-  rounding. Across numbers of partitions, without `row_id`, or across BLAS builds, results agree to
+  identifier, which must be asked for; with the default, placed by a hash, and with the input's
+  partitions, fits agree to rounding. Across numbers of partitions, without `row_id`, or across BLAS builds, results agree to
   rounding (1e-9 standard errors, tested), not bit for bit. What else must stay the same for
   identical bits: without strata the Arrow batch size, since the sums run batch by batch, and
   tables small enough to be added on the driver; NumPy and its BLAS. This is weaker than
@@ -235,7 +239,7 @@ providers.
 | Unstratified fits equal pprof_py's | Same file: 4 combinations | As for the stratified fits: equal up to the Newton step pprof_py leaves |
 | Unstratified Cox on Spark equals one machine, and does not depend on partitions or batch sizes | Same file | Within 1e-9 standard errors with 7 partitions and batches of 700 rows |
 | Rows given in the kernel's order need no sort | `test_engine_kernels.py`: both tie methods with weights, offset and entry; baseline, expected events, robust middle | Identical bits to the kernel's own sort of the same rows. Strata in another arrangement and with text labels: within 1e-11 |
-| Fits repeat bit for bit with `row_id`, with strata and (placed by row identifier) without, also from a repartitioned input | `test_engine_spark.py`, `test_engine_time.py` | Identical coefficients, covariance and log-likelihood. Rows placed by a hash, or left in the input's partitions, which is the default without strata: within 1e-9 standard errors |
+| Fits repeat bit for bit with `row_id`, with strata and (placed by row identifier) without, also from a repartitioned input | `test_engine_spark.py`, `test_engine_time.py` | Identical coefficients, covariance and log-likelihood. Rows placed by a hash, which is the default without strata, or left in the input's partitions: within 1e-9 standard errors |
 | Tables centred after the first pass equal tables accumulated centred | `test_engine_time.py`: both tie methods, with weights, offset and entry | Score and rank-one matrix within 1e-9, cumulative hazard within 1e-12, relative |
 | Missing features are refused by the pass that builds the working set | Both files: Cox with and without strata, logistic; null and NaN | The same message and count as before |
 | Tables too large for the driver are added on the executors | `test_engine_time.py`, with the limit set to zero | Within 1e-9 standard errors |
@@ -246,7 +250,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 132 tests. In the sandbox of 2026-11-22 (no R installed) 129 pass and the 3
+The repository has 134 tests. In the sandbox of 2026-11-22 (no R installed) 131 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5
@@ -315,6 +319,12 @@ run on the cluster with strata and with providers
 19.7 and 19.8 seconds for Cox at 50 and 100 features and 15.0 and 19.0 for the logistic model by
 medians of four, 1.8 to 4.6 times shorter than pprof_spark's at its pinned build `b92919c`. Without strata it has not run there;
 the configuration that is now its default has, as `partitions="input"`.
+Without strata the layouts were set side by side there on 2026-11-22
+(`docs/reports/2026-11-22-databricks-unstratified-layouts.md`): one partition per core made a later
+evaluation 26 to 31 percent shorter than the input's partitions, and placing the rows by a hash
+built the working set as fast as leaving them in place, where sorting them cost about 2 seconds.
+Decision D-23, approved the same day, makes one partition per core placed by a hash the default
+without strata: version 0.9 of this specification.
 
 ### 5.3 The reference's stopping rule
 
@@ -371,6 +381,6 @@ rows (OI-27).
 | More than 200,000 rows in providers without events or with only events | Refused |
 | Times with more than `max_times` distinct values, without strata | Refused. Continuous times need a sorted layout |
 | A few large strata | The time grid handles one stratum; a grid per stratum is the natural extension |
-| Identical bits across runs without strata by default, or without `row_id` | By default the rows stay in the input's partitions; without `row_id` they can be placed by a hash but not sorted. Runs agree to rounding |
+| Identical bits across runs without strata by default, or without `row_id` | By default the rows are placed by a hash of the row and not sorted, and `partitions="input"` leaves them where they are; without `row_id` a number of partitions places them by a hash as well. Runs agree to rounding |
 | For fits without strata: robust variance, residuals, standardized measures. For all fits: robust variance with Efron ties or with clusters of several rows; direct standardization; provider tests; survival curves for new rows | Cox |
 | Confidence intervals for effects and ratios; funnel limits; binomial trials; a faster exact test for very large providers | Logistic |

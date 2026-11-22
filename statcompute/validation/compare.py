@@ -55,10 +55,11 @@ def compare_records(records: Iterable[Dict[str, Any]], reference: str = "pprof_p
     """Every completed run against the reference adapter's first completed run on the same dataset
     and model, one row per adapter and version: the number of runs compared, and the comparison of
     the run that is furthest from the reference, so that no run of a version is left unseen. Runs
-    without a completed reference run are left out."""
+    without a completed reference run are left out, and so are the records of a probe, which
+    carry no coefficients."""
     groups: Dict[Any, List[Dict[str, Any]]] = {}
     for r in records:
-        if r.get("status") == "ok":
+        if r.get("status") == "ok" and (r.get("fit") or {}).get("coefficients"):
             groups.setdefault((r["dataset"]["id"], r["model"]["label"]), []).append(r)
     out = []
     for (dataset, model), runs in sorted(groups.items()):

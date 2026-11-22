@@ -58,8 +58,11 @@ runner checks before starting.
 
 Adapters today: `engine`, `pprof_r`, `pprof_py`, `pprof_spark`, `pprof_spark_cached` (the same package
 with its input cached first), `lab_numpy`, `lab_spark`. For measurements the engine has variants that
-differ in layout only: `engine_50k`, `engine_125k` and `engine_250k` fix the rows of a partition, and
-`engine_cores` and `engine_cores_hash` spread a fit without strata over one partition per core.
+differ in layout only: `engine_50k`, `engine_125k` and `engine_250k` fix the rows of a partition;
+without strata `engine_input` leaves the rows in the input's partitions and `engine_cores` places
+them by row identifier and sorts them (`engine_cores_hash` is the layout the default has had since
+decision D-23). `engine_passes` is a probe and no fit: it takes one evaluation of the engine apart
+on the cluster (`statcompute/lab/passes.py`).
 
 ## How an algorithm moves
 

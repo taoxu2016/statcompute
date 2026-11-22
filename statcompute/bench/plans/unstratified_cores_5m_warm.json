@@ -1,6 +1,6 @@
 {
  "name": "unstratified_cores_5m_warm",
- "description": "Cox without strata at 5 million rows, three layouts of the rows in one session (OPEN_ITEMS OI-39): the input's own partitions, which is the default (decision D-19); one partition per core with the rows placed by row identifier and sorted by it; one partition per core with the rows placed by a hash of the row and not sorted. Four repeats, the three taking turns repeat by repeat, with the stored table read and the Python workers started before every timed fit, and the cluster asked once more for its ten executors when it is found short just before a fit.",
+ "description": "Cox without strata at 5 million rows, three layouts of the rows in one session (OPEN_ITEMS OI-39): the engine's default, which since decision D-23 is one partition per core with the rows placed by a hash of the row and not sorted (`engine`); the input's own partitions, the default before (`engine_input`); one partition per core with the rows placed by row identifier and sorted by it (`engine_cores`). Four repeats, the three taking turns repeat by repeat, with the stored table read and the Python workers started before every timed fit, and the cluster asked once more for its ten executors when it is found short just before a fit. In the session of 2026-11-22, version 0.21.0, `engine` was the input's partitions and `engine_cores_hash` the hash layout.",
  "datasets": [
   {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
   {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
@@ -8,7 +8,7 @@
  "models": {
   "cox": [{"family": "cox", "ties": "breslow", "strata": null, "convergence": "default"}]
  },
- "adapters": ["engine", "engine_cores", "engine_cores_hash"],
+ "adapters": ["engine", "engine_input", "engine_cores"],
  "repeats": 4,
- "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "engine_partitions": "input", "interleave": true, "hold_again": 1, "hold_settle_s": 3}
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "interleave": true, "hold_again": 1, "hold_settle_s": 3}
 }

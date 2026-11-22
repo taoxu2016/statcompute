@@ -157,7 +157,8 @@ def test_unstratified_cox_on_spark_equals_the_single_machine_fit(spark, survival
 
 def test_unstratified_cox_on_spark_repeats_bit_for_bit_whatever_the_inputs_partitions(survival):
     """Round 12: without strata the rows can be placed and sorted by row_id, so every fit adds in the same order.
-    Round 18 (decision D-19): on request only; by default they stay in the input's partitions."""
+    Round 18 (decision D-19): on request only. Round 25 (decision D-23): by default they are spread over one partition
+    per core by a hash of the row, not sorted; `partitions="input"` leaves them in the input's partitions."""
     frame, _ = survival
     fit = lambda data, **more: CoxPH("time", "event", FEATURES, None, ties="efron", entry="entry", weights="w", offset="o",  # noqa: E731
                                      rows_per_partition=1700, **more).fit(data)
@@ -168,17 +169,23 @@ def test_unstratified_cox_on_spark_repeats_bit_for_bit_whatever_the_inputs_parti
         assert np.array_equal(first.coefficients, other.coefficients) and np.array_equal(first.covariance, other.covariance)
         assert first.log_likelihood == other.log_likelihood
     assert len(first.evaluation_seconds) == first.evaluations
-    # the default leaves the rows in the input's own partitions; a number places them, by a hash when there is no
-    # row identifier: the same fit each time, to rounding
+    # the default spreads the rows over one partition per core by a hash of the row (decision D-23), with a row
+    # identifier or without; "input" leaves them in the input's own partitions; a number places them, by a hash when
+    # there is no row identifier: the same fit each time, to rounding
+    cores = frame.sparkSession.sparkContext.defaultParallelism
     asis, named, hashed = fit(frame), fit(frame, partitions="input"), fit(frame, partitions=3)
-    assert asis.settings["rows_placed"] == named.settings["rows_placed"] == "as in the input"
-    assert asis.partitions == named.partitions == frame.rdd.getNumPartitions() and asis.settings.get("rows_per_partition") is None
-    assert fit(frame.repartition(5)).partitions == 5
+    assert asis.settings["rows_placed"] == "by a hash of the row" and asis.partitions == cores
+    assert asis.settings["partitions_from"] == "one per core" and asis.execution["partitions_from"] == "one per core" and asis.execution["cores"] == cores
+    with_id = fit(frame, row_id="id")
+    assert with_id.settings["rows_placed"] == "by a hash of the row" and with_id.partitions == cores
+    assert named.settings["rows_placed"] == "as in the input" and named.partitions == frame.rdd.getNumPartitions()
+    assert asis.settings.get("rows_per_partition") is None and named.settings.get("partitions_from") is None
+    assert fit(frame.repartition(5), partitions="input").partitions == 5 and fit(frame.repartition(5)).partitions == cores
     assert hashed.settings["rows_placed"] == "by a hash of the row" and hashed.partitions == 3
     # the record of what produced the digits is kept with the model (decision D-16)
     assert first.execution["layout"] == "time grid" and first.execution["partitions"] == 4 and first.execution["rows_placed"] == "by row_id"
     assert first.execution["driver"]["numpy"] == np.__version__ and first.execution["arrow_batch_rows"] and first.execution["executors"] is None
-    for other in (hashed, asis):
+    for other in (hashed, asis, named, with_id):
         assert np.max(np.abs(other.coefficients - first.coefficients) / first.standard_errors) < 1e-9
         assert np.max(np.abs(other.standard_errors / first.standard_errors - 1)) < 1e-10
     with pytest.raises(ValueError, match="without strata"):
@@ -233,7 +240,8 @@ def test_the_harness_runs_the_engine_without_strata(spark, tmp_path):
     assert len(comparison) == 1 and comparison[0]["coefficients_over_T_COEF"] <= 1 and comparison[0]["like_for_like"]
     extras = by["engine"]["fit"]["extras"]
     assert extras["partitions"] >= 1 and len(extras["evaluation_seconds"]) == extras["evaluations"]
-    assert by["engine"]["fit"]["settings"]["rows_placed"] == "as in the input" and extras["execution"]["layout"] == "time grid"
+    assert by["engine"]["fit"]["settings"]["rows_placed"] == "by a hash of the row" and extras["execution"]["layout"] == "time grid"
+    assert extras["execution"]["partitions_from"] == "one per core" and extras["partitions"] == spark.sparkContext.defaultParallelism
     # a plan can set the partitions of the fit without strata: a number or "rows" places the rows by row identifier
     plan["options"] = {"engine_partitions": 3}
     again = [r for r in run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "more")) if r["adapter"]["name"] == "engine"]

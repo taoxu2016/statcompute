@@ -7,13 +7,14 @@ from ..testkit.specs import COX
 
 
 SPREAD = {"row_id": "one partition per core, the rows placed by row identifier and sorted by it",
-          "hash": "one partition per core, the rows placed by a hash of the row and not sorted"}
+          "hash": "one partition per core, the rows placed by a hash of the row and not sorted",
+          "input": "the rows left in the input's own partitions, the default until decision D-23"}
 
 
 class Engine(Adapter):
     name, kind, role = "engine", "spark", "engine"
     rows_per_partition = None                              # None: the engine's own default, one partition per core (D-21)
-    spread = None                                          # without strata. None: the engine's default, the input's partitions (D-19)
+    spread = None                                          # without strata. None: the engine's default, one per core by a hash (D-23)
 
     def describe(self, spark=None):
         out = {"name": self.name, "kind": self.kind, "role": self.role, "version": __version__,
@@ -45,7 +46,9 @@ class Engine(Adapter):
         if self.options.get("engine_rows_per_partition") or self.rows_per_partition:
             options["rows_per_partition"] = int(self.options.get("engine_rows_per_partition") or self.rows_per_partition)
         if model.family == COX:
-            if not model.strata and self.spread:
+            if not model.strata and self.spread == "input":
+                options["partitions"] = "input"
+            elif not model.strata and self.spread:
                 # As many partitions as a fit with strata gets by default (decision D-21): the cores at this moment,
                 # more by size. Given a number, the engine places the rows by the row identifier and sorts them by
                 # it; without a row identifier it places them by a hash of the row and does not sort.
@@ -104,11 +107,20 @@ class EngineCores(Engine):
 
 class EngineCoresHash(Engine):
     """As `engine_cores`, with the rows placed by a hash of the row and not sorted, which is what
-    the engine does when it is given no row identifier: the shuffle without the sort."""
+    the engine does when it is given no row identifier: the shuffle without the sort. Since
+    decision D-23 this is the layout of the engine's default; the adapter stays for the records
+    made under its name."""
     name, spread = "engine_cores_hash", "hash"
 
 
+class EngineInput(Engine):
+    """Without strata: the rows left in the input's own partitions, which was the default until
+    decision D-23. Only for fits without strata."""
+    name, spread = "engine_input", "input"
+
+
 register("engine", Engine)
+register("engine_input", EngineInput)
 register("engine_cores", EngineCores)
 register("engine_cores_hash", EngineCoresHash)
 register("engine_50k", Engine50k)

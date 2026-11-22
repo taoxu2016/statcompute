@@ -67,3 +67,32 @@ as long as with 100: fewer, larger tasks cost less until cores go idle. With one
 second or more of every evaluation still moved with neither the number of tasks nor their rows
 (OI-40).
 
+## The probe for the cluster (round 25)
+
+The sandbox has one core; what an evaluation costs around its tasks, and what four workers on two
+physical cores do to a kernel, can only be measured on the cluster. `statcompute/lab/passes.py`
+does it there: adapter `engine_passes`, plan `pass_cost_5m_warm`. It builds the working set the
+engine builds (a test asks the probe's evaluation and the engine's for the same bits) and runs
+eight kinds of pass over it, five times each, the kinds taking turns:
+
+| Kind | What it adds to the kind before | What it answers |
+|---|---|---|
+| `job` | As many JVM tasks as partitions, doing nothing | What a job costs on this platform whatever it does |
+| `idle` | Python tasks sent one byte a row | What starting a task in a Python worker adds |
+| `rows` | The rows received and stacked, as in the engine | What bringing the rows to Python costs |
+| `kernel` | The engine's kernel, BLAS at one thread | The kernel inside a task, as the engine runs it |
+| `kernel_free` | The same without the limit | Whether one BLAS thread is the right limit on two physical cores (OI-35) |
+| `kernel_plain` | The prototype's Cox kernel on the same rows | What centring the features costs on the cluster (OI-35) |
+| `evaluation` | The engine's own pass, results collected and summed | What returning the sums and adding them costs beyond `kernel` |
+| `half` | `kernel` on every second partition | What two tasks on one physical core cost each other |
+
+The tasks time themselves, so a pass's seconds less its slowest task's are what the job costs
+outside its tasks. Read with these in mind: the passes run after a first evaluation has built and
+cached the working set, so nothing here is a first pass; the probe evaluates at the coefficients
+the data were generated with; `half` leaves the idle tasks of the other partitions in the job, so
+its seconds are a job of all the tasks while its kernels have the cores to themselves.
+
+In the sandbox (one core, local mode, 6,000 rows) the probe's evaluation returns the engine's
+log-likelihood bit for bit and the prototype's kernel the same to 1e-9. No timing from the sandbox
+is meant.
+

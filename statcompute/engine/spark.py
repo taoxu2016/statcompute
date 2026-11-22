@@ -636,12 +636,14 @@ class CoxPH:
                     200 MB of features; so the layout follows the cluster, and fits on clusters of
                     different size agree to rounding. `partitions`, or `rows_per_partition` (the
                     number of rows over it, rounded up), fixes the layout whatever the cluster, and
-                    with `row_id` the bits. Without strata the rows stay in the input's own
-                    partitions by default (also partitions="input"): no shuffle, as many tasks per
-                    pass as the input has partitions, and results that repeat to rounding. A
+                    with `row_id` the bits. Without strata the default is the same number, one
+                    partition per core, the rows placed by a hash of the row and not sorted
+                    (decision D-23): one shuffle, and results that repeat to rounding.
+                    partitions="input" leaves the rows in the input's own partitions: no shuffle,
+                    as many tasks per pass as the input has partitions, the same to rounding. A
                     number, or "rows" for the number of rows over `rows_per_partition` (50,000 when
                     not given), places them by row identifier in that many partitions and sorts
-                    them: a shuffle, and with `row_id` the same bits in every fit.
+                    them: a shuffle and a sort, and with `row_id` the same bits in every fit.
 
     `execution` of the result is the record of what produced it (decision D-16): versions, the
     libraries on the driver, the Arrow batch size and the layout.
@@ -732,9 +734,12 @@ class CoxPH:
         return sum(int(r["n"]) for r in groups), np.sort(np.asarray(values, dtype=np.float64))
 
     def _fit_time(self, frame) -> CoxModel:
-        """Without strata: the time grid. No pass needs the rows in any order, so by default they
-        stay where the input has them; on request they are spread over partitions by row identifier
-        and sorted by it, so that every fit sums in the same order."""
+        """Without strata: the time grid. No pass needs the rows in any order. By default they are
+        spread over one partition per core by a hash of the row and not sorted (decision D-23): on
+        the cluster that made an evaluation 26 to 31 percent shorter than the input's partitions and
+        cost nothing more to build (docs/reports/2026-11-22-databricks-unstratified-layouts.md). On
+        request they stay where the input has them, or are placed by row identifier and sorted by
+        it, so that every fit sums in the same order."""
         from pyspark.sql import functions as F
 
         shipped = ship_package(frame.sparkSession)
@@ -743,17 +748,20 @@ class CoxPH:
         columns, scalars, conditions = self._columns(stratified=False)
         rows, grid = self._grid(frame.select(*scalars), conditions, has_entry)
         selected = frame.select(*columns)
-        as_stored = self.partitions in (None, "input")
-        if as_stored:
-            work = selected.persist()
+        rule = cores = None
+        if self.partitions == "input":
+            work, placed = selected.persist(), "as in the input"
             partitions = work.rdd.getNumPartitions()
+        elif self.partitions is None:
+            partitions, rule, cores = working_partitions(frame.sparkSession, rows, p)
+            work, placed = selected.repartition(partitions, F.xxhash64(*selected.columns)).persist(), "by a hash of the row"
         else:
             partitions = (max(1, math.ceil(rows / (self.rows_per_partition or ROWS_PER_PARTITION))) if self.partitions == "rows"
                           else int(self.partitions))
             if self.row_id:
-                work = selected.repartition(partitions, "k").sortWithinPartitions("k").persist()
+                work, placed = selected.repartition(partitions, "k").sortWithinPartitions("k").persist(), "by row_id"
             else:
-                work = selected.repartition(partitions, F.xxhash64(*selected.columns)).persist()
+                work, placed = selected.repartition(partitions, F.xxhash64(*selected.columns)).persist(), "by a hash of the row"
         try:
             K = len(grid)
             where = timegrid.layout(K, p, efron, has_entry)
@@ -799,7 +807,6 @@ class CoxPH:
         finally:
             work.unpersist()
         mu, hazard = state["mu"], None
-        placed = "as in the input" if as_stored else ("by row_id" if self.row_id else "by a hash of the row")
         if self.baseline:
             import pandas as pd
 
@@ -811,10 +818,11 @@ class CoxPH:
                         fit["evaluations"], fit["converged"], fit["newton_step_in_se"], rows, state["events"], partitions,
                         self._settings(layout="time grid", distinct_times=K, passes_per_evaluation=2,
                                        rows_per_partition=(self.rows_per_partition or ROWS_PER_PARTITION) if self.partitions == "rows" else None,
-                                       rows_placed=placed),
+                                       rows_placed=placed, partitions_from=rule),
                         {"prepare": prepared - started, "fit": done - prepared}, hazard, evaluation_seconds=seconds,
                         execution=execution_record(frame.sparkSession, layout="time grid", partitions=partitions,
-                                                   rows_placed=placed, row_id=self.row_id, code_sent=shipped))
+                                                   partitions_from=rule, cores=cores, rows_placed=placed, row_id=self.row_id,
+                                                   code_sent=shipped))
 
     def _fit_strata(self, frame) -> CoxModel:
         from pyspark.sql import functions as F

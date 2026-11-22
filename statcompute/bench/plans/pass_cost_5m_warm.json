@@ -1,0 +1,14 @@
+{
+ "name": "pass_cost_5m_warm",
+ "description": "What one pass over the engine's working set costs, part by part (OPEN_ITEMS OI-40), and what the Cox kernels cost inside a task (OI-35): the probe `engine_passes` on the four datasets of `compare_5m`, two repeats, each running every kind of pass five times in turn. It fits nothing. With the stored table read and the Python workers started before every probe, and the cluster asked again for its ten executors when it is short (decision D-22).",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"},
+  {"family": "logistic_fe", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {"cox": [{"family": "cox", "ties": "breslow", "strata": "provider", "convergence": "default"}], "logistic_fe": [{"family": "logistic_fe", "convergence": "default"}]},
+ "adapters": ["engine_passes"],
+ "repeats": 2,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "hold_again": 1, "hold_settle_s": 3, "pass_repeats": 5}
+}
