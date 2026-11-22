@@ -13,5 +13,5 @@
  },
  "adapters": ["engine", "engine_50k", "engine_125k", "engine_250k"],
  "repeats": 4,
- "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all"}
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "hold_again": 1, "hold_settle_s": 3}
 }

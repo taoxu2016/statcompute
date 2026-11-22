@@ -184,6 +184,16 @@ def _site(name: str) -> str:
     return re.sub(r"\S*/", "", name or "")[:60]
 
 
+def _sources(counts: Optional[Dict[str, Any]]) -> str:
+    """The counts of executors taken just before a fit, when they do not agree: the scheduler's
+    block managers, the executors the status store lists as active, and the scheduler's cores
+    over the cores of one executor."""
+    seen = {name: (counts or {}).get(name) for name in ("scheduler", "active", "by_cores")}
+    if len({value for value in seen.values() if value is not None}) < 2:
+        return ""
+    return " (" + ", ".join(f"{name.replace('_', ' ')} {value}" for name, value in seen.items() if value is not None) + ")"
+
+
 def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """For every completed run of a Spark implementation: its phases, its first evaluation beside a
     later one where the adapter reports them, and the slowest single task among its heaviest stages,
@@ -201,7 +211,8 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     with the default of decision D-21 a fit that starts on a smaller cluster has fewer partitions,
     and this is where it shows. `executors_held` is what the warm-up that asks for the plan's
     executors reported just before: how many it saw, of how many, after how long, and from
-    version 0.21.0 how many were counted after the reads, just before the fit, where that differs."""
+    version 0.21.0 how many were counted after the reads, just before the fit, where that differs;
+    from version 0.22.0 that count is the lowest of three, which are listed where they disagree."""
     out = []
     for r in records:
         timing, spark = r.get("timing") or {}, r.get("spark") or {}
@@ -247,7 +258,8 @@ def where_time_went(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                "executors_held": None if held.get("reached") is None
                else (f"{held['reached']} of {held.get('target')} in {held.get('seconds', 0):.0f} s"
                      + (f", asked {held['asked']} times" if (held.get("asked") or 1) > 1 else "")
-                     + (f", {held['before_fit']} before the fit" if held.get("before_fit") not in (None, held["reached"]) else "")),
+                     + (f", {held['before_fit']} before the fit" if held.get("before_fit") not in (None, held["reached"]) else "")
+                     + _sources(held.get("counts"))),
                "input_warmed": None if not warmed else (f"{warmed.get('mode')}: failed" if "error" in warmed
                                                         else f"{warmed.get('mode')} in {warmed.get('seconds', 0):.0f} s"),
                "python_started": None if warmed.get("python_seconds") is None else f"in {warmed['python_seconds']:.0f} s"}

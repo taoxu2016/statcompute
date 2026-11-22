@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-22, version 0.21.0 (round 23: the default of D-21 read on the cluster; the harness counts the executors
-just before a fit; a plan for three layouts without strata; the list of handoff candidates).
+Updated 2026-11-22, version 0.22.0 (round 24: the session of the default read whole; without strata, one partition per
+core placed by a hash is the fastest of three layouts; D-22 approved and implemented, with a better count; D-23 proposed).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass; round 24 has 132, of which 129 pass.
 
 ## First cluster run, 2026-11-16
 
@@ -348,15 +348,56 @@ What round 23 changes, none of it in the engine's fits:
 Tried in the sandbox only (one core, local mode, mocked counts of executors): the count before the fit, asking again,
 the interleaved order. The box in `03_report` has not been seen on Databricks.
 
+## Round 24 (2026-11-22): the whole report, three layouts without strata, and D-22
+
+The maintainer applied round 23, rendered the session of `compare_5m_warm` again, whole, with pprof_spark as the
+reference, ran `unstratified_cores_5m_warm` with version 0.21.0, and approved D-22.
+
+**The session of the default, read whole** (`docs/reports/2026-11-22-databricks-default-partitions.md`, section 9; OI-44
+closed):
+
+- The tasks per fit are what the rule gives: 236 and 268 for Cox, 316 and 348 for the logistic model at 40 partitions;
+  156, 188 and 204 at 24.
+- The engine's coefficients agree with pprof_spark's, the pinned build, within 6.9e-13 standard errors for Cox and
+  2.1e-10 for the logistic model in every run, those at 24 partitions included: at most 5e-4 of T_COEF.
+- Before each of the eight fits that started on six executors the warm-up had reported "10 of 10 in 0 s". Getting four
+  executors back took 44 to 127 seconds, 14 times in the session.
+- Without the 13 fits that carry a caveat the engine's whole call is 1.7 to 4.7 times shorter than pprof_spark's and
+  4.2 to 7.9 seconds longer than its prototype's, by medians.
+
+**Without strata, three layouts in one session** (`docs/reports/2026-11-22-databricks-unstratified-layouts.md`; OI-39):
+
+| Features | | The input's partitions (default) | One per core, sorted | One per core, by a hash |
+|---|---|---:|---:|---:|
+| 50 | A later evaluation, median | 3.9 s | 2.8 s | 2.7 s |
+| 50 | Whole call, undisturbed | 17.4 s | 18.3 s | 14.6, 16.1, 14.6 s |
+| 100 | A later evaluation, median | 5.35 s | 3.8 s | 3.95 s |
+| 100 | Whole call, undisturbed | 26.5, 24.5, 23.2 s | 21.4, 21.9 s | none |
+
+- One task per core makes an evaluation 26 to 31 percent shorter, at 100 features too, where the input already has 33
+  partitions.
+- The sort costs about 2 seconds when the working set is built and gives nothing back. Placing the rows by a hash
+  builds as fast as leaving them where they are.
+- At 100 features the hash layout had no undisturbed call, and the default was slower than on 2026-11-21 with the same
+  layout: 5.0 to 6.0 seconds an evaluation against 3.8 to 4.2 (OI-46).
+- **D-23 proposes the consequence:** without strata, one partition per core placed by a hash, by default. Not
+  implemented until the maintainer rules.
+
+**D-22, approved 2026-11-22, and its first run.** In `unstratified_cores_5m_warm`, which already asked again, one fit
+still ran on six executors: the count taken after the reads said ten. Round 24 gives the rule to every plan that holds
+the cluster and changes the count: a pause of three seconds after the reads, then the lowest of three counts (the
+scheduler's block managers, the executors listed as active, the scheduler's cores over the cores of one executor),
+all three recorded. Five other fits of that session lost executors during the fit, four of them in its first
+evaluation; nothing before a fit can prevent that (OI-43).
+
+Tried in the sandbox only: the pause and the three counts, with the counts mocked.
+
 ## What has not happened
 
-- The session of 2026-11-22 has not been read whole: the tasks per fit, the caveats and the medians without the fits
-  on six executors are in the part of the report that did not arrive, and its coefficients were compared with nothing,
-  pprof_py not being in the plan (OI-44).
-- No run on Databricks of version 0.21.0: the count before the fit, `hold_again`, `interleave` and the two adapters
-  without strata are untried there.
+- No run on Databricks of version 0.22.0: the pause and the lowest of three counts before a fit are untried there.
 - No measurement of what an evaluation costs apart from its tasks and its rows, nor of the kernels inside a task
-  (OI-40, OI-35).
+  (OI-40, OI-35). The probe for it is designed in OI-40 and not built.
+- The three layouts without strata were not compared in their coefficients on the cluster: the plan has no reference.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
 
@@ -366,14 +407,13 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. No new run: render `compare_5m_warm` again with `versions` = `0.20.0` and `reference` = `pprof_spark`, to complete
-   the reading of 2026-11-22 (OI-44). No restart is needed after pulling.
-2. Run `unstratified_cores_5m_warm`: without strata, a task per core against the input's partitions, with and without
-   the sort (OI-39). The maintainer's ruling on D-22.
-3. The probe of what an evaluation costs and of the kernels inside a task (OI-40, OI-35): to be built, then run.
-4. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
-5. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
-6. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20); the open limits
+1. The maintainer's ruling on D-23. If approved: the default without strata changes, and one session of
+   `unstratified_cores_5m_warm` confirms it, with the hash layout's missing calls at 100 features.
+2. The probe of what an evaluation costs and of the kernels inside a task (OI-40, OI-35): to be built, then run. Its
+   run is also the first of the amended count before a fit (D-22).
+3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
+4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+5. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20); the open limits
    of D-21 (OI-41, OI-42).
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is

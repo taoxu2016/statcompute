@@ -13,5 +13,5 @@
  },
  "adapters": ["engine", "pprof_spark", "pprof_spark_cached", "lab_spark", "pprof_py", "lab_numpy"],
  "repeats": 2,
- "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10}
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "hold_again": 1, "hold_settle_s": 3}
 }

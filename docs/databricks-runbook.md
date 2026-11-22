@@ -25,7 +25,10 @@ autoscaling can also remove workers while a job is running. Either makes a timin
    of sleeping tasks until 10 executors are attached, for at most 15 minutes, and only then starts
    the clock. It cannot stop the autoscaler from removing workers later, and on this cluster it
    does: four of the ten can go in the seconds between that count and the fit. So the runner
-   counts once more just before the fit, and a plan with the option `hold_again` asks again then.
+   waits three seconds after the reads, counts once more, by three counts of which it takes the
+   lowest, and asks again when that is short: the options `hold_settle_s` and `hold_again`, which
+   every plan that holds the cluster sets (decision D-22). A loss during a fit remains; one fit in
+   five had one in the sessions of 2026-11-22.
 3. Either way, every record says what the fit actually had: `environment.during` holds the smallest
    and largest executor count, the time-averaged cores and each change, and the report's
    `share_of_cores` is executor run time over wall time and average attached cores. A run whose

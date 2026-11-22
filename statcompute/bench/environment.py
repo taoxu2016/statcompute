@@ -131,6 +131,28 @@ def attached(spark):
     return executors, sc.defaultParallelism
 
 
+def counted(spark) -> Dict[str, Any]:
+    """The executors attached right now by every count this harness has, and the lowest of them.
+
+    `scheduler` is the block managers the scheduler lists: what `attached` returns and what the
+    sampler follows during a fit. `active` is what the UI's status store lists as active.
+    `by_cores` is the scheduler's cores over the cores of one active executor. On the cluster the
+    first said ten just before a fit that ran on six from its first moment, with 24 cores when
+    the fit counted them (unstratified_cores_5m_warm, 2026-11-22). So one count is not taken for
+    the truth: `executors` is the lowest that is known."""
+    scheduler, cores = attached(spark)
+    try:
+        listed = SparkMetrics(spark).executors() or {}
+    except Exception:
+        listed = {}
+    active, by_cores = listed.get("executors"), None
+    if active and listed.get("cores") and cores:
+        by_cores = int(cores // (listed["cores"] / active))
+    known = [value for value in (scheduler, active, by_cores) if value is not None]
+    return {"scheduler": scheduler, "active": active, "cores": cores, "by_cores": by_cores,
+            "executors": min(known) if known else None}
+
+
 def short_of(warmup: Optional[Dict[str, Any]], during: Optional[Dict[str, Any]]) -> Optional[str]:
     """The caveat for a fit that never had the executors its plan holds, or None. `hold_at` can
     report the full number and the fit still run on fewer from its first moment to its last: the
@@ -163,15 +185,15 @@ def hold_at(spark, executors: int, timeout_s: float = 900.0, task_seconds: float
     out = {"target": int(executors), "reached": None, "seconds": 0.0, "rounds": 0, "seen": []}
     if sc.master.startswith("local") and not allow_local:
         return dict(out, skipped="local session")
+    current = counted(spark)["executors"]          # the lowest of the counts: the scheduler's alone has said ten for six
     started = time.perf_counter()
-    current = attached(spark)[0]
     out["seen"].append([0.0, current])
     while (current is None or current < executors) and time.perf_counter() - started < timeout_s:
         tasks = max(8 * int(executors), 2 * sc.defaultParallelism)
         sc.setJobGroup("statcompute-warmup", f"asking the autoscaler for {executors} executors")
         sc.parallelize(range(tasks), tasks).foreach(lambda _, s=task_seconds: __import__("time").sleep(s))
         out["rounds"] += 1
-        current = attached(spark)[0]
+        current = counted(spark)["executors"]
         out["seen"].append([round(time.perf_counter() - started, 1), current])     # executors after each round
         if log is not None:
             log(f"warm-up: {current} of {executors} executors after {time.perf_counter() - started:.0f} s")

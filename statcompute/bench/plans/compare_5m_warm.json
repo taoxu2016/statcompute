@@ -13,5 +13,5 @@
  },
  "adapters": ["engine", "lab_spark", "pprof_spark", "pprof_spark_cached"],
  "repeats": 4,
- "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "lab_rows_per_partition": 125000}
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "lab_rows_per_partition": 125000, "hold_again": 1, "hold_settle_s": 3}
 }

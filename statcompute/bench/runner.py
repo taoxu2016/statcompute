@@ -130,9 +130,14 @@ def run_one(spark, plan_name: str, adapter_name: str, dataset, model: ModelSpec,
             break
         # The cluster can lose executors in the seconds after the warm-up saw them all (7 of the 64 runs of
         # 2026-11-22 then ran on six of ten). So they are counted again here, after the reads and just before
-        # the fit, and with the option `hold_again` the harness asks again, that many times at most.
-        record["warmup"].update(before_fit=environment.attached(spark)[0], asked=asked)
-        now = record["warmup"]["before_fit"]
+        # the fit, and with the option `hold_again` the harness asks again, that many times at most
+        # (decision D-22). The loss comes about a second after the reads end, and a count taken at once has
+        # missed it: `hold_settle_s` waits that long first, and the count is the lowest of those the harness has.
+        if float(options.get("hold_settle_s", 0)) > 0:
+            time.sleep(float(options["hold_settle_s"]))
+        counts = environment.counted(spark)
+        record["warmup"].update(before_fit=counts["executors"], counts=counts, asked=asked)
+        now = counts["executors"]
         if now is None or now >= int(options["hold_executors"]) or asked > int(options.get("hold_again", 0)):
             break
     if adapter.kind == "spark":

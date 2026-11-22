@@ -10,5 +10,5 @@
  },
  "adapters": ["engine", "engine_cores", "engine_cores_hash"],
  "repeats": 4,
- "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "engine_partitions": "input", "interleave": true, "hold_again": 1}
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 1200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "engine_partitions": "input", "interleave": true, "hold_again": 1, "hold_settle_s": 3}
 }

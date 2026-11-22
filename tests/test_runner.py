@@ -401,28 +401,83 @@ def test_a_fit_on_fewer_executors_than_the_plan_holds_is_flagged(spark, tmp_path
         calls.append(executors)
         return dict(held, target=executors, reached=executors, seconds=2.0, rounds=1)
 
+    def count(scheduler, active=None):
+        active = scheduler if active is None else active
+        return {"scheduler": scheduler, "active": active, "cores": 4 * active, "by_cores": active, "executors": min(scheduler, active)}
+
     monkeypatch.setattr(environment, "hold_at", hold)
-    monkeypatch.setattr(environment, "attached", lambda spark: (6, 24))
+    monkeypatch.setattr(environment, "counted", lambda spark: count(6))
+    monkeypatch.setattr(environment, "attached", lambda spark: (6, 24))          # what the sampler follows during the fit
     plan = dict(PLAN, adapters=["lab_spark"], options={"hold_executors": 10})
     record = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "a"))[0]
     assert record["status"] == "ok" and calls == [10]
-    assert record["warmup"]["before_fit"] == 6 and record["warmup"]["asked"] == 1
+    assert record["warmup"]["before_fit"] == 6 and record["warmup"]["asked"] == 1 and record["warmup"]["counts"]["cores"] == 24
     assert record["caveats"] == ["the cluster had 6 of 10 executors when the fit started"] == caveats(record)
     from statcompute.bench.results import where_time_went
     assert where_time_went([record])[0]["executors_held"] == "10 of 10 in 2 s, 6 before the fit"
-    # With `hold_again` it asks again, that many times at most, and adds up what the asking cost.
+    # With `hold_again` it asks again, that many times at most, and adds up what the asking cost (decision D-22).
     del calls[:]
-    counts = iter([(6, 24), (10, 40)] + [(10, 40)] * 50)
-    monkeypatch.setattr(environment, "attached", lambda spark: next(counts))
+    counts = iter([count(6), count(10)])
+    monkeypatch.setattr(environment, "counted", lambda spark: next(counts))
+    monkeypatch.setattr(environment, "attached", lambda spark: (10, 40))
     again = run_plan(spark, dict(plan, options={"hold_executors": 10, "hold_again": 1}), str(tmp_path / "data"), str(tmp_path / "b"))[0]
     assert calls == [10, 10] and again["warmup"]["asked"] == 2 and again["warmup"]["before_fit"] == 10
     assert again["warmup"]["seconds"] == 4.0 and again["warmup"]["rounds"] == 2 and again["caveats"] == []
     assert where_time_went([again])[0]["executors_held"] == "10 of 10 in 4 s, asked 2 times"
     del calls[:]
+    monkeypatch.setattr(environment, "counted", lambda spark: count(6))
     monkeypatch.setattr(environment, "attached", lambda spark: (6, 24))
     never = run_plan(spark, dict(plan, options={"hold_executors": 10, "hold_again": 2}), str(tmp_path / "data"), str(tmp_path / "c"))[0]
     assert calls == [10, 10, 10] and never["warmup"]["asked"] == 3
     assert never["caveats"] == ["the cluster had 6 of 10 executors when the fit started"]
+
+
+def test_the_count_before_a_fit_is_the_lowest_of_three_and_waits_first(spark, tmp_path, monkeypatch):
+    """Round 24: on the cluster the scheduler's count said ten just before a fit that ran on six and
+    counted 24 cores. The count before the fit is now the lowest of the scheduler's block managers,
+    the executors listed as active and the scheduler's cores over the cores of one executor, taken
+    after a pause (`hold_settle_s`), because the loss comes about a second after the reads end."""
+    import time
+
+    from statcompute.bench import environment
+    from statcompute.bench.metrics import SparkMetrics
+    from statcompute.bench.results import where_time_went
+
+    monkeypatch.setattr(environment, "attached", lambda spark: (10, 24))
+    monkeypatch.setattr(SparkMetrics, "executors", lambda self: {"executors": 6, "cores": 24})
+    assert environment.counted(spark) == {"scheduler": 10, "active": 6, "cores": 24, "by_cores": 6, "executors": 6}
+    monkeypatch.setattr(SparkMetrics, "executors", lambda self: {"executors": 10, "cores": 40})   # the list is late, the cores are not
+    assert environment.counted(spark)["by_cores"] == 6 and environment.counted(spark)["executors"] == 6
+    monkeypatch.setattr(SparkMetrics, "executors", lambda self: None)                             # no list: the scheduler alone
+    assert environment.counted(spark) == {"scheduler": 10, "active": None, "cores": 24, "by_cores": None, "executors": 10}
+    monkeypatch.setattr(SparkMetrics, "executors", lambda self: {"executors": 6, "cores": 24})
+    monkeypatch.setattr(environment, "hold_at", lambda spark, executors, timeout: {"target": executors, "reached": executors, "seconds": 0.0, "rounds": 0})
+    waited, sleep = [], time.sleep
+    monkeypatch.setattr(time, "sleep", lambda seconds: (waited.append(seconds), sleep(min(seconds, 0.05)))[1])
+    plan = dict(PLAN, adapters=["lab_spark"], options={"hold_executors": 10, "hold_settle_s": 3})
+    record = run_plan(spark, plan, str(tmp_path / "data"), str(tmp_path / "results"))[0]
+    assert 3.0 in waited and record["status"] == "ok"
+    assert record["warmup"]["before_fit"] == 6 and record["warmup"]["counts"]["scheduler"] == 10
+    assert "the cluster had 6 of 10 executors when the fit started" in record["caveats"]
+    assert where_time_went([record])[0]["executors_held"] == "10 of 10 in 0 s, 6 before the fit (scheduler 10, active 6, by cores 6)"
+
+
+def test_every_plan_that_holds_the_cluster_asks_again(spark):
+    """Decision D-22, approved 2026-11-22."""
+    import glob
+    import json
+    import os
+
+    from statcompute.bench.runner import PLANS
+
+    holding = []
+    for path in sorted(glob.glob(os.path.join(PLANS, "*.json"))):
+        with open(path) as f:
+            options = json.load(f).get("options", {})
+        if options.get("hold_executors"):
+            holding.append(os.path.basename(path))
+            assert options.get("hold_again") == 1 and options.get("hold_settle_s") == 3, path
+    assert len(holding) == 7 and "compare_5m_warm.json" in holding
 
 
 def test_the_adapters_of_a_plan_can_take_turns(spark, tmp_path):

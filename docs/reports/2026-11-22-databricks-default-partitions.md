@@ -8,6 +8,11 @@ implementations on four datasets of 5 million rows, four repeats each. Condition
 of 4 vCPUs, 8,000 providers, the simple design, the stored table read and the Python workers started
 before every timed call.
 
+**Completed later the same day.** The report as it first arrived lacked its middle, and sections 1
+to 8 were written from what survived. The maintainer then rendered the session alone with round
+23's notebook, whole, with pprof_spark as the reference: section 9 holds what that added, and the
+medians in the tables of sections 3 and 4 are now the report's own.
+
 **The report reached the repository without its middle.** It came as the output of a notebook cell
 that printed it, and such a cell keeps the first and the last 25,600 characters of a long text. What
 survived: the environment, the list of implementations, the first 111 rows of the table of runs (the
@@ -122,14 +127,14 @@ Whole calls of this session, in seconds: the median of four, and the best.
 
 | Model, features | engine | lab_spark | pprof_spark | pprof_spark_cached |
 |---|---|---|---|---|
-| Cox with strata, 50 | 18.4, 13.3 | 10.4, 9.8 | 35.1, 26.5 | 29.8, 26.5 |
-| Cox with strata, 100 | 22.0, 18.5 | 15.1, 14.9 | 69.5, 57.6 | 62.4, 60.8 |
-| Logistic, 50 | 17.4, 12.9 | 10.9, 8.5 | 50.7, 36.4 | 59.2, 55.9 |
-| Logistic, 100 | 22.0, 17.2 | 12.4, 11.7 | 99.0, 76.1 | 69.3, 68.5 |
+| Cox with strata, 50 | 18.4, 13.3 | 10.3, 9.8 | 35.1, 26.5 | 29.8, 26.5 |
+| Cox with strata, 100 | 22.0, 18.5 | 15.1, 14.8 | 69.5, 57.6 | 62.4, 60.8 |
+| Logistic, 50 | 17.4, 12.9 | 10.9, 8.5 | 50.6, 36.4 | 59.2, 55.9 |
+| Logistic, 100 | 22.0, 17.2 | 12.4, 11.7 | 99.1, 76.1 | 69.2, 68.5 |
 
 **Against pprof_spark the engine's whole call is 1.9 to 4.5 times shorter by the medians and 2.0 to
 4.4 times by the best call** (0.16.0 session: 1.8 to 4.6 and 1.4 to 4.1). Restricted to the calls at
-a steady ten executors, of which pprof_spark has two or three per dataset, 1.7 to 4.6 times.
+a steady ten executors, of which pprof_spark has two or three per dataset, 1.7 to 4.7 times.
 
 **Against its prototype, on equal terms, the engine is 3.5 to 5.5 seconds behind by the best call**
 and 6.5 to 9.6 by the medians, which carry the new executors of section 3. One evaluation at a
@@ -156,7 +161,7 @@ prototype, which does not time its evaluations, the fit phase divided by its fou
   difference does: the engine limits BLAS to one thread in each worker and the prototype does not.
   Neither was measured on the cluster.
 - **Cox, the rest of the call.** In the engine's best call at 50 features (13.3 seconds against
-  the prototype's median of 10.4) the three later evaluations account for 1.0 second of the
+  the prototype's median of 10.3) the three later evaluations account for 1.0 second of the
   difference. The other 1.9 are before them: 0.6 for the light job that counts and checks the
   rows, which the prototype does not have, and 1.3 in opening the table, building the working set
   and the first evaluation, which the two report in different phases: 6.4 seconds in the engine
@@ -237,3 +242,58 @@ rows rounded to a tenth of a second. The prototype's evaluations are an average 
 first one. Nothing was measured inside a task, so the difference between the two Cox kernels on
 the cluster is inferred from whole evaluations. The adapters ran one after another on each dataset,
 the engine first; `interleave`, new in round 23, lets a plan have them take turns.
+
+## 9. What the whole report added (rendered again on 2026-11-22)
+
+The session alone, 64 records, rendered with version 0.21.0, pprof_spark as the reference.
+
+**The tasks per fit are what the rule gives** (section 2):
+
+| Model, features | Engine at ten executors | Engine at six | Prototype |
+|---|---|---|---|
+| Cox with strata, 50 | 236 | 156 | 259 |
+| Cox with strata, 100 | 268 | 188 | 275 |
+| Logistic, 50 | 316 | 204 | 278 |
+| Logistic, 100 | 348 | none ran at six | 310 |
+
+The report now prints the layout of every engine fit: 40 partitions, "one per core", 40 cores at
+the start in 13 fits, and 24, "one per core", 24 cores in the three on six executors. The logistic
+fit that lost four executors on the way ran 362 tasks instead of 348. Every fit took three
+iterations in the engine and the prototype; pprof_spark took three for Cox and four for the
+logistic model.
+
+**The coefficients agree with pprof_spark's**, the pinned build, in all four runs of every dataset,
+the runs at 24 partitions and the one on a shrinking cluster included. The largest difference of
+any run:
+
+| Model, features | engine, in standard errors | lab_spark, in standard errors | Multiple of T_COEF, at most |
+|---|---|---|---|
+| Cox with strata, 50 | 6.9e-13 | 2.4e-12 | 3.8e-6 |
+| Cox with strata, 100 | 5.1e-13 | 3.2e-12 | 6.4e-6 |
+| Logistic, 50 | 1.9e-10 | 1.9e-10 | 3.6e-4 |
+| Logistic, 100 | 2.1e-10 | 2.1e-10 | 5.1e-4 |
+
+Standard errors agree within 1e-13 relative and log-likelihoods within 1.4e-16. Every row is
+like-for-like. `pprof_spark_cached` equals pprof_spark to the last bit.
+
+**What the warm-up saw before the fits on six executors** (section 5): "10 of 10 in 0 s" before
+every one of them, the seven that stayed at six and the one that started at six and grew. The
+warm-up counted ten at once, asked for nothing, and the fit had six. After a loss, getting the four
+executors back took 44 to 127 seconds, 14 times in the session; at its start, reaching ten took 738
+seconds. The seven fits now carry the caveat "the fit ran on 6 of the 10 executors the plan holds":
+13 of the 64 fits have a caveat, 51 have none.
+
+**Medians without the fits that carry a caveat**, whole calls in seconds, with the number of fits
+left:
+
+| Model, features | engine | lab_spark | pprof_spark | pprof_spark_cached |
+|---|---|---|---|---|
+| Cox with strata, 50 | 18.2 (3) | 10.3 (4) | 31.4 (2) | 29.8 (4) |
+| Cox with strata, 100 | 19.3 (3) | 15.1 (4) | 61.9 (3) | 62.4 (4) |
+| Logistic, 50 | 16.7 (3) | 8.9 (3) | 50.3 (3) | 57.5 (2) |
+| Logistic, 100 | 19.6 (3) | 12.4 (4) | 91.2 (2) | 69.2 (4) |
+
+By these the engine's whole call is 1.7 to 4.7 times shorter than pprof_spark's, and 4.2 to 7.9
+seconds longer than its prototype's.
+
+Nothing in sections 1 to 8 is changed by the whole report except the rounding of five medians.
