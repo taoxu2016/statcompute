@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-22, version 0.23.0 (round 25: D-23 approved and implemented, one partition per core placed by a hash
-is the default without strata; the probe of what a pass costs is built).
+Updated 2026-11-23, version 0.24.0 (round 26: the cluster's answer on what an evaluation costs, part by part; the
+default without strata and the amended count before a fit on the cluster).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass; round 24 has 132, of which 129 pass; round 25 has 134, of which 131 pass.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass; round 24 has 132, of which 129 pass; round 25 has 134, of which 131 pass; round 26 adds none.
 
 ## First cluster run, 2026-11-16
 
@@ -406,12 +406,46 @@ In the sandbox (one core, local mode): the default without strata, the input's p
 within 1e-9 standard errors, and with pprof_py within the tolerance classes; the probe's evaluation returns the engine's
 log-likelihood bit for bit, which is the test that it measures the engine's working set and not another.
 
+## Round 26 (2026-11-23): what an evaluation is made of, and the two decisions on the cluster
+
+The maintainer applied round 25 and ran both plans with version 0.23.0 in one session: `pass_cost_5m_warm` twice (16
+probes) and `unstratified_cores_5m_warm` (24 fits). Both reports arrived whole. Round 26 records them and changes no
+code.
+
+**An evaluation, taken apart** (`docs/reports/2026-11-23-databricks-pass-cost.md`; ten probes at a steady ten
+executors; OI-40 and OI-35 answered):
+
+| Part of an evaluation, seconds | Cox, 50 | Cox, 100 | Logistic, 50 | Logistic, 100 |
+|---|---:|---:|---:|---:|
+| A job of Python tasks, whatever they do | 0.48 | 0.43 | 0.41 | 0.45 |
+| Bringing the rows to Python | 0.48 | 0.78 | 0.45 | 0.77 |
+| The kernel | 0.79 | 1.63 | 0.31 | 0.45 |
+| The evaluation | 1.74 | 2.86 | 1.14 | 1.78 |
+
+- The Spark job is 0.1 seconds of the first row; the rest of it is starting tasks in Python.
+- Returning the sums and adding them costs nothing that shows.
+- The engine's Cox kernel takes a quarter more than the prototype's inside a task (0.67 to 0.70 seconds against 0.54
+  to 0.56 at 50 features; 1.41 to 1.50 against 1.13 to 1.16 at 100): the centring. That is most of what separates the
+  two implementations' Cox evaluations.
+- The limit of one BLAS thread changes nothing, and neither do two tasks on one physical core: closed.
+
+**The default without strata** (D-23; `docs/reports/2026-11-23-databricks-unstratified-default.md`; OI-39 closed):
+later evaluations a third shorter than the input's partitions at 50 features (2.7 against 4.05 seconds) and 6 percent
+shorter at 100 (3.65 against 3.9); whole calls of 15.8 against 18.3 seconds at 50 features, 18.9 to 19.3 at 100. The 26
+to 29 percent at 100 features on which D-23 was proposed did not return: the input's partitions were slow that day and
+not since (OI-46, closed). `DECISIONS.md` says so under D-23.
+
+**The count before a fit** (D-22 as round 24 amended it): in 40 runs none started on fewer than ten executors, and
+eleven times the harness asked again. A loss during a run remains: 6 of 16 probes, 3 of 24 fits. The cluster gave up
+four executors 70 to 90 seconds after the harness had last kept every core busy, eight times in a row (OI-43).
+
+What follows for the main goal is in two new items: the Cox kernel (OI-47: 0.2 to 0.4 seconds of an evaluation are
+centring, and the kernel makes five arrays the size of the features in every evaluation) and the rows (OI-48: 0.45 to
+0.8 seconds of every evaluation bring rows to Python that have not changed).
+
 ## What has not happened
 
-- No run on Databricks of versions 0.22.0 or 0.23.0: the pause and the lowest of three counts before a fit (D-22), the
-  default without strata as the engine lays it out (D-23), and the probe are untried there.
-- So there is still no measurement of what an evaluation costs apart from its tasks and its rows, nor of the kernels
-  inside a task (OI-40, OI-35).
+- Nothing has been done yet about what the probe found: the kernel and the rows are as they were (OI-47, OI-48).
 - The layouts without strata were not compared in their coefficients on the cluster: the plan has no reference.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
@@ -422,11 +456,9 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. One cluster session, two plans: `pass_cost_5m_warm` (8 probes; OI-40, OI-35) and `unstratified_cores_5m_warm` (24
-   fits; the default of D-23 beside the two other layouts; OI-39, OI-46). Both are also the first run of the amended
-   count before a fit (D-22). No restart is needed after pulling.
-2. From the probe's answer: where an evaluation's second goes, and whether tasks that live for a whole fit are worth
-   trying (OI-40); centring and the BLAS limit in the Cox kernel (OI-35).
+1. The Cox kernel in the sandbox (OI-47): centring without the copies, fewer temporaries; then the cluster with the
+   probe. No decision is needed unless what the kernel computes would change.
+2. The rows (OI-48): prior art and a sandbox trial of not sending them again; then a proposal for a decision.
 3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
 4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
 5. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20); the open limits

@@ -96,3 +96,24 @@ In the sandbox (one core, local mode, 6,000 rows) the probe's evaluation returns
 log-likelihood bit for bit and the prototype's kernel the same to 1e-9. No timing from the sandbox
 is meant.
 
+## What the cluster answered (2026-11-23)
+
+`docs/reports/2026-11-23-databricks-pass-cost.md` has the numbers: ten probes at a steady ten
+executors, 40 tasks of 125,000 rows. Against what this note said from the sandbox:
+
+- **A-11 said receiving the rows hardly depends on how much is received. On the cluster it does.** A
+  task sent one byte a row takes 0.1 seconds; with the rows it takes 0.5 seconds at 50 features and
+  0.8 at 100. The cost per task that A-11 saw is there as well, 0.3 seconds a pass for starting
+  tasks in Python, but it is the smaller part. On one core the JVM and the Python worker take turns,
+  which may be what hid it.
+- **A-12's quarter is on the cluster too**: the engine's Cox kernel 0.67 to 0.70 and 1.41 to 1.50
+  seconds a task, the prototype's 0.54 to 0.56 and 1.13 to 1.16. Both take about three times what
+  they took here for the same rows.
+- **The two candidates this note left open are closed**: the limit on BLAS changes nothing, and
+  with half the tasks a kernel is 4 to 8 percent shorter, so the workers do not slow each other.
+- **The Spark job itself is a tenth of a second**, and returning the sums costs nothing that shows.
+
+So an evaluation is a job of Python tasks (0.4 to 0.5 seconds), the rows (0.45 to 0.8) and the
+kernel (0.3 to 1.6), and the two that can be reduced without changing the platform are the kernel
+(OI-47) and the rows (OI-48).
+
