@@ -144,7 +144,7 @@ def _cox_partition(p: int, beta: List[float], ties: str, validate: bool = False)
         with _one_thread():
             out = kernels.cox_partial(cols["x"], cols["t"], cols["d"], _runs(cols["s"])[0], np.asarray(beta, dtype=np.float64),
                                       ties=ties, weights=cols.get("w"), offset=cols.get("o"), entry=cols.get("e"),
-                                      presorted=True)
+                                      presorted=True, overwrite=True)     # the task's own rows, not needed after this
         yield _partial(pa, out["loglik"], out["score"], out["information"], rows, out["events"])
     return run
 

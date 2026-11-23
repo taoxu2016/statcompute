@@ -1,0 +1,12 @@
+{
+ "name": "cox_kernel_5m_warm",
+ "description": "The Cox kernel inside the tasks, before and after version 0.25.0 (OPEN_ITEMS OI-47): the probe `engine_passes` on the two Cox datasets of `compare_5m`, three repeats, each running five kinds of pass five times in turn: the rows received and stacked; the kernel as it was up to version 0.24.0; the kernel as it is; the prototype's kernel; the engine's whole evaluation. It fits nothing.",
+ "datasets": [
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 50, "design": "simple"},
+  {"family": "cox", "rows": 5000000, "providers": 8000, "features": 100, "design": "simple"}
+ ],
+ "models": {"cox": [{"family": "cox", "ties": "breslow", "strata": "provider", "convergence": "default"}]},
+ "adapters": ["engine_passes"],
+ "repeats": 3,
+ "options": {"driver_memory_fraction": 0.4, "timeout_s": 7200, "clear_cache": true, "cache_input": false, "hold_executors": 10, "warm_input": "all", "hold_again": 1, "hold_settle_s": 3, "pass_repeats": 5, "pass_kinds": ["rows", "kernel_before", "kernel", "kernel_plain", "evaluation"]}
+}

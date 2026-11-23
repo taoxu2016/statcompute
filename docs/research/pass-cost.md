@@ -81,6 +81,7 @@ eight kinds of pass over it, five times each, the kinds taking turns:
 | `idle` | Python tasks sent one byte a row | What starting a task in a Python worker adds |
 | `rows` | The rows received and stacked, as in the engine | What bringing the rows to Python costs |
 | `kernel` | The engine's kernel, BLAS at one thread | The kernel inside a task, as the engine runs it |
+| `kernel_before` | The same rows through the Cox kernel of version 0.24.0 (from round 27) | What reusing the kernel's arrays saved (OI-47) |
 | `kernel_free` | The same without the limit | Whether one BLAS thread is the right limit on two physical cores (OI-35) |
 | `kernel_plain` | The prototype's Cox kernel on the same rows | What centring the features costs on the cluster (OI-35) |
 | `evaluation` | The engine's own pass, results collected and summed | What returning the sums and adding them costs beyond `kernel` |
@@ -116,4 +117,40 @@ executors, 40 tasks of 125,000 rows. Against what this note said from the sandbo
 So an evaluation is a job of Python tasks (0.4 to 0.5 seconds), the rows (0.45 to 0.8) and the
 kernel (0.3 to 1.6), and the two that can be reduced without changing the platform are the kernel
 (OI-47) and the rows (OI-48).
+
+## The Cox kernel with the same sums in less memory (round 27, OI-47)
+
+The cluster said the Cox kernel is half of a Cox evaluation and that a quarter of it is centring.
+Read with that in mind, the kernel of version 0.24.0 makes eleven arrays the size of the rows, or of
+the event times by the features, in every call: the stratum means spread over the rows, the centred
+rows, the rows times the risk scores, their running sums, three for the sums at the event times,
+three for the means at the event times and their weighted copy, and the rows times the expected
+events. Version 0.25.0 makes three and reuses them, with every floating-point operation unchanged
+and in the same order (`docs/spec/engine.md`, section 2).
+
+One partition of the cluster's shape, 125,000 rows in 200 strata, sorted; Breslow ties; best of
+seven calls on the sandbox's one core, and the peak of the memory NumPy asked for during a call:
+
+| Features | Kernel | Milliseconds | Of 0.24.0 | Peak, times the rows |
+|---:|---|---:|---:|---:|
+| 50 | Version 0.24.0 | 280 | 1.00 | 5.4 |
+| 50 | Version 0.25.0, centring in a copy | 173 | 0.62 | 3.0 |
+| 50 | Version 0.25.0, in the task's own rows | 158 | 0.56 | 2.0 |
+| 50 | The prototype's, which does not centre | 226 | 0.81 | 3.3 |
+| 100 | Version 0.24.0 | 526 | 1.00 | 5.3 |
+| 100 | Version 0.25.0, centring in a copy | 397 | 0.75 | 2.8 |
+| 100 | Version 0.25.0, in the task's own rows | 348 | 0.66 | 1.8 |
+| 100 | The prototype's, which does not centre | 393 | 0.75 | 3.2 |
+
+The outputs of the two versions are identical bit for bit, here and in 6,720 comparisons over
+shapes, tie methods and options. The kernel that centres is now faster than the prototype's that
+does not.
+
+What is left in a call at 100 features, by measuring the pieces apart on the same core: the two
+matrix products take 93 of the 348 milliseconds, and a pass over an array the size of the rows
+takes 17 when the array exists and 28 when it has to be made. Forming the two products in their
+symmetric form would take 33 milliseconds off (8 at 50 features), and would change the last bits of
+the information; not done. On the cluster the kernels took about 2.5 times what they take here, so
+what this is worth there is for the probe to say: plan `cox_kernel_5m_warm` runs both versions and
+the prototype's inside the same tasks.
 

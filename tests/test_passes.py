@@ -33,6 +33,7 @@ def test_the_probe_evaluates_on_the_working_set_the_engine_builds(spark, tmp_pat
     # the engine's kernel gives the evaluation's log-likelihood with or without the BLAS limit, the prototype's to rounding
     values = out["kernel_values"]
     assert values["kernel"] == pytest.approx(out["value"], rel=1e-12) and values["kernel_free"] == pytest.approx(out["value"], rel=1e-12)
+    assert values["kernel_before"] == values["kernel"]             # the kernel of version 0.24.0 added up the same bits
     assert values["kernel_plain"] == pytest.approx(out["value"], rel=1e-9)
     # only some kinds on request, and no prototype kernel for the logistic model
     few = passes.measure(spark, frame, "cox", names, dataset.rows, model.coefficients, repeats=1, kinds=("job", "evaluation"))
@@ -54,10 +55,10 @@ def test_a_plan_runs_the_probe_and_the_report_shows_what_a_pass_costs(spark, tmp
     cox, logistic = probes["cox/stratified/breslow/default"], probes["logistic_fe/default"]
     assert cox["adapter"]["role"] == "probe" and cox["fit"]["coefficients"] == [] and cox["truth"] is None
     assert cox["fit"]["extras"]["pass_kinds"] == list(passes.KINDS) and cox["fit"]["extras"]["pass_repeats"] == 2
-    assert logistic["fit"]["extras"]["pass_kinds"] == [kind for kind in passes.KINDS if kind != "kernel_plain"]
+    assert logistic["fit"]["extras"]["pass_kinds"] == [kind for kind in passes.KINDS if kind not in passes.COX_ONLY]
     assert cox["fit"]["extras"]["execution"]["partitions_from"] == "one per core" and cox["timing"]["phases"]["prepare"] > 0
     rows = pass_costs(records)
-    assert [row["kind"] for row in rows] == list(passes.KINDS) + [kind for kind in passes.KINDS if kind != "kernel_plain"]
+    assert [row["kind"] for row in rows] == list(passes.KINDS) + [kind for kind in passes.KINDS if kind not in passes.COX_ONLY]
     kernel = next(row for row in rows if row["kind"] == "kernel" and row["model"].startswith("cox"))
     assert kernel["passes"] == 2 and kernel["tasks"] == cox["fit"]["extras"]["partitions"] and kernel["kernel_s"] is not None
     assert kernel["around_tasks_s"] is not None and kernel["median_s"] >= kernel["slowest_task_s"]
@@ -70,3 +71,9 @@ def test_a_plan_runs_the_probe_and_the_report_shows_what_a_pass_costs(spark, tmp
     assert {row["adapter"] for row in compared} == {"engine"} and len(compared) == 3
     assert all(row["adapter"] != "engine_passes" for row in medians(records))
     assert "## What a pass costs" not in render([r for r in records if r["adapter"]["name"] != "engine_passes"], "lab_numpy")
+    # a plan can name the kinds of pass
+    few = dict(plan, datasets=plan["datasets"][:1], models={"cox": plan["models"]["cox"][:1]}, adapters=["engine_passes"],
+               options={"pass_repeats": 1, "pass_kinds": ["rows", "kernel_before", "kernel"]})
+    record = run_plan(spark, few, str(tmp_path / "data"), str(tmp_path / "few"))[0]
+    assert record["status"] == "ok" and record["fit"]["extras"]["pass_kinds"] == ["rows", "kernel_before", "kernel"]
+    assert record["fit"]["extras"]["kernel_values"]["kernel_before"] == record["fit"]["extras"]["kernel_values"]["kernel"]

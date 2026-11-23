@@ -62,7 +62,8 @@ differ in layout only: `engine_50k`, `engine_125k` and `engine_250k` fix the row
 without strata `engine_input` leaves the rows in the input's partitions and `engine_cores` places
 them by row identifier and sorts them (`engine_cores_hash` is the layout the default has had since
 decision D-23). `engine_passes` is a probe and no fit: it takes one evaluation of the engine apart
-on the cluster (`statcompute/lab/passes.py`).
+on the cluster (`statcompute/lab/passes.py`), and times the Cox kernel against the one of version
+0.24.0, kept in `statcompute/lab/cox_kernel_0_24.py` for that.
 
 ## How an algorithm moves
 

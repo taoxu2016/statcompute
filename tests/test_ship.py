@@ -91,7 +91,8 @@ def test_a_tasks_function_carries_functions_and_no_module():
     assert dist._by_value()
     for function in (engine._cox_partition(4, [0.0] * 4, "breslow", True), engine._logistic_scan(4),
                      engine._time_pass1(4, b"", b"", 0.0, b"", False, False, True), lab.partition_kernel("cox", 4, [0.0] * 4),
-                     passes._timed("cox", 4, [0.0] * 4, "breslow", "plain"), passes._timed("logistic_fe", 4, [0.0] * 4, "breslow", "engine")):
+                     passes._timed("cox", 4, [0.0] * 4, "breslow", "plain"), passes._timed("logistic_fe", 4, [0.0] * 4, "breslow", "engine"),
+                     passes._timed("cox", 4, [0.0] * 4, "breslow", "before")):
         blob = cloudpickle.dumps(function)
         text = io.StringIO()
         pickletools.dis(blob, out=text)

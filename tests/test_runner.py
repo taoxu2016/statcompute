@@ -477,7 +477,7 @@ def test_every_plan_that_holds_the_cluster_asks_again(spark):
         if options.get("hold_executors"):
             holding.append(os.path.basename(path))
             assert options.get("hold_again") == 1 and options.get("hold_settle_s") == 3, path
-    assert len(holding) == 8 and "compare_5m_warm.json" in holding and "pass_cost_5m_warm.json" in holding
+    assert len(holding) == 9 and "compare_5m_warm.json" in holding and "cox_kernel_5m_warm.json" in holding
 
 
 def test_the_adapters_of_a_plan_can_take_turns(spark, tmp_path):

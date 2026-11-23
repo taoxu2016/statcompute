@@ -8,7 +8,9 @@ cox_partial        Partial likelihood, score and information of a Cox model with
                        X' diag(E) X  -  sum over tie steps of  wbar * xbar xbar',
                    where E_i is row i's expected number of events (docs/spec/engine.md). No second
                    moment per event time is ever formed. Covariates are centred within each stratum
-                   first: that changes nothing statistically and removes a cancellation.
+                   first: that changes nothing statistically and removes a cancellation. The
+                   kernel reuses its arrays: three the size of the rows, where it made eleven up
+                   to version 0.24.0 with the same sums bit for bit (lab/cox_kernel_0_24.py).
 logistic_partial   Profile likelihood of beta in a logistic model with one intercept per provider:
                    every provider's intercept is solved in place, or held at a given value.
 """
@@ -30,11 +32,26 @@ def _starts(sorted_values: np.ndarray) -> np.ndarray:
     return first
 
 
+def _less(values: np.ndarray, parts: np.ndarray, codes: np.ndarray, start: np.ndarray, stop: np.ndarray,
+          out: Optional[np.ndarray] = None) -> np.ndarray:
+    """values - parts[codes], where the rows of `values` with one code lie together, from start[k]
+    to stop[k]. Written to `out`, which may be `values` itself and is `values` when not given. The
+    subtractions are those of the plain expression, so the bits are the same; where groups are
+    large they are made group by group, which spares an array the size of `values`."""
+    out = values if out is None else out
+    if len(start) * 32 <= len(values):
+        for k in range(len(start)):
+            np.subtract(values[start[k]:stop[k]], parts[k], out=out[start[k]:stop[k]])
+    else:
+        np.subtract(values, parts[codes], out=out)
+    return out
+
+
 def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.ndarray, beta: np.ndarray, *,
                 ties: str = "breslow", weights: Optional[np.ndarray] = None, offset: Optional[np.ndarray] = None,
                 entry: Optional[np.ndarray] = None, order: Optional[np.ndarray] = None,
                 baseline: bool = False, robust: bool = False, rows: bool = False,
-                presorted: bool = False) -> Dict[str, object]:
+                presorted: bool = False, overwrite: bool = False) -> Dict[str, object]:
     """Sums for the rows given, which must hold whole strata.
 
     With `baseline` the result also holds, for every event time of every stratum, the increment of
@@ -54,6 +71,14 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
                    or copied then, `order` is not used, and `strata` may hold any values that differ
                    between neighbouring strata. The sums are the same, bit for bit, as from the same
                    rows in the same order after the kernel's own sort.
+    overwrite      with `presorted`: the kernel may centre the rows in X itself instead of in a copy,
+                   so that X holds the centred rows when the kernel returns. For a caller that owns
+                   the array and needs it no more. Ignored where X is not float64 or cannot be
+                   written to. The sums are the same bits either way.
+
+    Memory: the kernel makes three arrays the size of X or smaller (the centred rows, unless
+    `overwrite`; one buffer for every product with the rows; the sums at the event times) and
+    reuses them. With entry times, Efron ties, or `robust` it makes a few more.
 
     Returns loglik, score, information, events (weighted) and deaths (count).
     """
@@ -64,11 +89,13 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
         perm = None
         placed = lambda v: v                              # noqa: E731
         t, s = time, strata
+        own = bool(overwrite)
     else:
         keys = (-time, strata) if order is None else (order, -time, strata)
         perm = np.lexsort(keys)                           # stratum ascending, then time descending
         placed = lambda v: v[perm]                        # noqa: E731
         X, t, s = X[perm], time[perm], strata[perm]
+        own = True                                        # a copy of the rows that the kernel made itself
     d = placed(event).astype(np.float64)
     w = np.ones(n) if weights is None else placed(weights).astype(np.float64)
 
@@ -77,14 +104,15 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     sid = np.cumsum(first) - 1
     size = np.diff(np.concatenate((start, [n])))
     centre = np.add.reduceat(X, start, axis=0) / size[:, None]
-    Xc = X - centre[sid]                                  # centred within the stratum
+    in_place = own and X.dtype == np.float64 and X.flags.writeable
+    Xc = _less(X, centre, sid, start, start + size, X if in_place else np.empty((n, p)))    # centred within the stratum
     eta = Xc @ beta
     if offset is not None:
         eta = eta + placed(offset)
     shift = np.maximum.reduceat(eta, start)
     eta = eta - shift[sid]                                # a constant per stratum changes nothing; avoids overflow
     r = w * np.exp(eta)                                   # weighted risk score
-    RX = r[:, None] * Xc
+    RX = np.multiply(r[:, None], Xc, out=np.empty((n, p)))
 
     last = np.empty(n, dtype=bool)                        # last row of each (stratum, time) group
     last[-1] = True
@@ -94,19 +122,27 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     grp = np.cumsum(np.concatenate(([0], last[:-1])))     # group of each row
     gsid = sid[ends]
     G = len(ends)
-
-    c0 = np.cumsum(r, dtype=np.longdouble)
-    base0 = np.concatenate((np.zeros(1, dtype=np.longdouble), c0[start[1:] - 1]))
-    S0 = (c0[ends] - base0[gsid]).astype(np.float64)      # sum over rows with time >= t
-    C1 = np.cumsum(RX, axis=0)
-    base1 = np.vstack((np.zeros((1, p)), C1[start[1:] - 1]))
-    S1 = C1[ends] - base1[gsid]
+    gstart = np.flatnonzero(_starts(gsid))
+    gnext = np.concatenate((gstart[1:], [G]))
 
     truncated = False
     if entry is not None:
         e = placed(entry).astype(np.float64)
         finite = np.isfinite(e)
         truncated = bool(finite.any())
+    S1D = None
+    if ties == "efron" and d.any():
+        dead = np.flatnonzero(d > 0)                      # rows that died, in group order
+        dead_first = np.flatnonzero(_starts(grp[dead]))
+        S1D = np.add.reduceat(RX[dead], dead_first, axis=0)   # sums over the tied deaths, taken before RX is given up
+
+    c0 = np.cumsum(r, dtype=np.longdouble)
+    base0 = np.concatenate((np.zeros(1, dtype=np.longdouble), c0[start[1:] - 1]))
+    S0 = (c0[ends] - base0[gsid]).astype(np.float64)      # sum over rows with time >= t
+    C1 = np.cumsum(RX, axis=0, out=None if truncated else RX)   # in RX's own memory, unless RX is needed below
+    base1 = np.vstack((np.zeros((1, p)), C1[start[1:] - 1]))
+    S1 = _less(C1[ends], base1, gsid, gstart, gnext)
+
     if truncated:
         # Times become integer codes, so that "entry >= t" is decided on the original values.
         values = np.unique(np.concatenate((t, e[finite])))
@@ -126,6 +162,7 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
         at = np.maximum(k - 1, 0)
         S0 = S0 - np.where(some, (ce0[at] - ebase0[gsid]).astype(np.float64), 0.0)
         S1 = S1 - np.where(some[:, None], CE1[at] - ebase1[gsid], 0.0)
+    scratch = C1                                          # its sums are taken: n by p, free for products with the rows
 
     dw = d * w
     weighted_deaths = np.add.reduceat(dw, group_first_row)
@@ -136,21 +173,26 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     h = np.zeros(G)                                       # hazard increment at each group's time
     h_tied = None
     if ties == "breslow" or not has.any():
-        xbar = S1[has] / S0[has, None]
+        events = int(has.sum())
+        if events == G:                                   # an event at every time: the means take the sums' place
+            xbar, spare = np.divide(S1, S0[:, None], out=S1), scratch
+        else:                                             # the means at the event times, in the buffer; the sums' memory is spare
+            xbar = np.take(S1, np.flatnonzero(has), axis=0, out=scratch[:events], mode="clip")
+            np.divide(xbar, S0[has, None], out=xbar)
+            spare, scratch = S1, None
         loglik -= float(weighted_deaths[has] @ np.log(S0[has]))
         score = score - weighted_deaths[has] @ xbar
         h[has] = weighted_deaths[has] / S0[has]
-        M = (xbar * weighted_deaths[has, None]).T @ xbar
+        M = np.multiply(xbar, weighted_deaths[has, None], out=spare[:events]).T @ xbar
+        if not robust and scratch is None:
+            scratch = C1                                  # the means are done with: the buffer is free again
     else:
         gi = np.flatnonzero(has)
         k_tied = deaths[gi].astype(np.int64)
         step_first = np.cumsum(k_tied) - k_tied
         idx = np.repeat(np.arange(len(gi)), k_tied)       # the tie group of each Efron step
         frac = (np.arange(int(k_tied.sum())) - step_first[idx]) / k_tied[idx]
-        dead = np.flatnonzero(d > 0)                      # rows that died, in group order
-        dead_first = np.flatnonzero(_starts(grp[dead]))
         S0D = np.add.reduceat(r[dead], dead_first)        # the same sums over the tied deaths only
-        S1D = np.add.reduceat(RX[dead], dead_first, axis=0)
         wbar = weighted_deaths[gi] / k_tied               # mean weight of the tied deaths
         A = S0[gi][idx] - frac * S0D[idx]
         xbar = (S1[gi][idx] - frac[:, None] * S1D[idx]) / A[:, None]
@@ -163,8 +205,6 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
         h_tied[gi] = wbar * np.add.reduceat(frac / A, step_first)
 
     suffix = np.concatenate((np.cumsum(h[::-1])[::-1], [0.0]))
-    gstart = np.flatnonzero(_starts(gsid))
-    gnext = np.concatenate((gstart[1:], [G]))
     beyond = suffix[gnext]                                # per stratum: what lies in later strata
     H = suffix[:-1] - beyond[gsid]                        # cumulative hazard up to each group's time
     exposure = H[grp]
@@ -175,7 +215,7 @@ def cox_partial(X: np.ndarray, time: np.ndarray, event: np.ndarray, strata: np.n
     E = r * exposure                                      # expected events of each row
     if h_tied is not None:
         E = E - d * r * h_tied[grp]
-    information = (Xc * E[:, None]).T @ Xc - M
+    information = np.multiply(Xc, E[:, None], out=scratch).T @ Xc - M     # scratch is None where the buffer is still in use
     out = {"loglik": loglik, "score": score, "information": information,
            "events": float(weighted_deaths.sum()), "deaths": int(deaths.sum())}
     if rows:

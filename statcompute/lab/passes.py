@@ -13,7 +13,8 @@ and each kind adds one thing to the kind before it:
     idle          Python tasks that are sent one byte for every row and do nothing with it
     rows          Python tasks that receive the rows and stack them into arrays, as the engine's do
     kernel        the same, and the engine's kernel, BLAS held to one thread as the engine holds it
-    kernel_free   the same without that limit
+    kernel_before the same rows through the engine's Cox kernel as it was up to version 0.24.0 (Cox only)
+    kernel_free   the engine's kernel without the limit on BLAS
     kernel_plain  the same rows through the prototype's Cox kernel, as the prototype runs it (Cox only)
     evaluation    the engine's own pass: its partition function, its results collected and summed
     half          `kernel` on every second partition: half the tasks, one for every two cores
@@ -41,11 +42,13 @@ from ..engine.spark import (PARTIAL, CoxPH, _cox_partition, _kept, _logistic_par
                             _stack, _sum, kernels, working_partitions)
 from ..testkit.specs import COX
 from . import kernels as _plain
+from .cox_kernel_0_24 import cox_partial_0_24
 from .dist import functions_of, ship_package
 
 plain = functions_of(_plain)           # a namespace of functions: no module object travels with a task (engine/dist.py)
 
-KINDS = ("job", "idle", "rows", "kernel", "kernel_free", "kernel_plain", "evaluation", "half")
+KINDS = ("job", "idle", "rows", "kernel", "kernel_before", "kernel_free", "kernel_plain", "evaluation", "half")
+COX_ONLY = ("kernel_before", "kernel_plain")
 TIMED = "n long, task_s double, receive_s double, kernel_s double, value double"
 
 
@@ -74,7 +77,8 @@ def _idle():
 def _timed(family: str, p: int, beta: List[float], ties: str, kernel: Optional[str]):
     """A Python task that receives and stacks its partition's rows as the engine's tasks do and
     then runs `kernel` on them: None for no kernel, "engine" for the engine's with BLAS at one
-    thread, "free" for the engine's without the limit, "plain" for the prototype's Cox kernel. It
+    thread, "before" for the engine's Cox kernel of version 0.24.0, "free" for the engine's
+    without the limit, "plain" for the prototype's Cox kernel. It
     returns its rows, its seconds from first line to last, those until the rows were stacked,
     those in the kernel, and the log-likelihood the kernel gave."""
     def run(batches):
@@ -88,12 +92,15 @@ def _timed(family: str, p: int, beta: List[float], ties: str, kernel: Optional[s
             return
         received, value, vector = time.perf_counter(), 0.0, np.asarray(beta, dtype=np.float64)
         if kernel:
-            with (_one_thread() if kernel == "engine" else contextlib.nullcontext()):
+            with (_one_thread() if kernel in ("engine", "before") else contextlib.nullcontext()):
                 if family == COX and kernel == "plain":
                     value = plain.cox_partial(cols["x"], cols["t"], cols["d"], _runs(cols["s"])[0], vector, presorted=True)[0]
-                elif family == COX:
+                elif family == COX and kernel == "before":
+                    value = cox_partial_0_24(cols["x"], cols["t"], cols["d"], _runs(cols["s"])[0], vector, ties=ties,
+                                             presorted=True)["loglik"]
+                elif family == COX:                        # as the engine's task calls it: in the task's own rows
                     value = kernels.cox_partial(cols["x"], cols["t"], cols["d"], _runs(cols["s"])[0], vector, ties=ties,
-                                                presorted=True)["loglik"]
+                                                presorted=True, overwrite=True)["loglik"]
                 else:
                     X, y, c, _, _, _, solvable = _providers(cols)
                     keep = solvable[c]
@@ -138,7 +145,7 @@ def measure(spark, frame, family: str, features: Sequence[str], rows: int, beta:
     from pyspark.sql import functions as F
 
     p, vector = len(features), [float(b) for b in beta]
-    kinds = [kind for kind in kinds if kind != "kernel_plain" or family == COX]
+    kinds = [kind for kind in kinds if kind not in COX_ONLY or family == COX]
     frame, partitions, rule, cores = working_set(spark, frame, family, features, rows, ties=ties, row_id=row_id, **names)
     work = frame.persist()
     state: Dict[str, Any] = {}
@@ -155,6 +162,7 @@ def measure(spark, frame, family: str, features: Sequence[str], rows: int, beta:
         "idle": lambda: work.select(F.lit(0).cast("byte").alias("b")).mapInArrow(_idle(), TIMED).collect(),
         "rows": lambda: work.mapInArrow(_timed(family, p, vector, ties, None), TIMED).collect(),
         "kernel": lambda: work.mapInArrow(_timed(family, p, vector, ties, "engine"), TIMED).collect(),
+        "kernel_before": lambda: work.mapInArrow(_timed(family, p, vector, ties, "before"), TIMED).collect(),
         "kernel_free": lambda: work.mapInArrow(_timed(family, p, vector, ties, "free"), TIMED).collect(),
         "kernel_plain": lambda: work.mapInArrow(_timed(family, p, vector, ties, "plain"), TIMED).collect(),
         "evaluation": evaluation,
@@ -196,7 +204,8 @@ class EnginePasses(Adapter):
     """The probe as an adapter, so that a plan can run it on the cluster like a fit: it holds and
     warms the cluster as for one, and its record carries what the passes cost in `extras`. It
     evaluates at the coefficients the data were generated with, where the kernels do the work of a
-    late evaluation. It returns no coefficients: nothing is compared with it."""
+    late evaluation. It returns no coefficients: nothing is compared with it. A plan can name the
+    kinds of pass to run (`pass_kinds`) and how often (`pass_repeats`)."""
     name, kind, role = "engine_passes", "spark", "probe"
 
     def describe(self, spark=None):
@@ -214,7 +223,8 @@ class EnginePasses(Adapter):
         names = spec.feature_names()
         started = clock.perf_counter()
         out = measure(spark, dataset.frame(spark), model.family, names, dataset.rows, spec.true_beta(),
-                      repeats=int(self.options.get("pass_repeats", 5)), ties=(model.ties or "breslow"), row_id="id")
+                      repeats=int(self.options.get("pass_repeats", 5)), ties=(model.ties or "breslow"), row_id="id",
+                      kinds=tuple(self.options.get("pass_kinds") or KINDS))
         spent = clock.perf_counter() - started
         execution = {"layout": "whole strata", "partitions": out["partitions"], "partitions_from": out["partitions_from"],
                      "cores": out["cores"], "row_id": "id"}

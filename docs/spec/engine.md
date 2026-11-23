@@ -44,6 +44,19 @@ amendment F-5 (Efron ties and entry times).
 by a constant per stratum. The kernel subtracts each stratum's mean first, which removes the
 cancellation the identity otherwise suffers when stratum means are far apart.
 
+**The kernel's memory.** The centred rows, their products with the risk scores, the running sums of
+those and the sums at the event times are each an array the size of the rows, and the kernel made
+eleven such arrays in every call up to version 0.24.0 of the package: 5.3 times the rows at its
+peak. On the cluster that kernel was half of a Cox evaluation
+(`docs/reports/2026-11-23-databricks-pass-cost.md`). From version 0.25.0 it makes three and reuses
+them: the centred rows, which a caller that owns its rows can let it write over them
+(`overwrite`), as the Spark tasks do; one buffer for every product with the rows; and the sums at
+the event times. Rows are centred stratum by stratum where strata are large. Every floating-point
+operation is the one it was, in the same order, so the sums are the same bit for bit; the kernel of
+version 0.24.0 is kept in `statcompute/lab/cox_kernel_0_24.py` to hold it to that. In the sandbox,
+on one partition of the cluster's shape, a call takes 56 percent of the time it took at 50 features
+and 66 percent at 100, and its peak is 2.0 and 1.8 times the rows.
+
 ### 2.1 With strata: whole strata in a partition
 
 Each partition holds whole strata, sorted once when the working set is built: by stratum, time
@@ -229,6 +242,7 @@ providers.
 |---|---|---|
 | The Cox kernel equals explicit risk sets | `test_engine_kernels.py`: 16 combinations of ties, weights, offset, entry | Log-likelihood within 1e-12, score 1e-11, information 1e-10, relative |
 | Centring removes the cancellation | Same file: stratum means 1,000 standard deviations apart | Information within 1e-9 of the unshifted one |
+| The kernel that reuses its arrays adds up what the kernel of version 0.24.0 did | Same file: both tie methods; few large strata and many small; an event at every time; weights, offsets, entry times, baseline, rows, robust; rows it may write over, rows it may not, float32, unsorted | Every output identical bit for bit |
 | Cox fits equal pprof_py's | Same file: 10 combinations | The estimates differ by exactly the Newton step that remains at pprof_py's estimate (2e-8 and 7e-8 standard errors in the two plain cases), to 1e-9; standard errors within 1e-7; log-likelihood within 1e-9 |
 | Logistic fits equal pprof_py's, with providers at the bound | Same file | Coefficients within 4e-15 standard errors; every intercept, the held ones included, within 4e-16 |
 | Spark equals one machine | `test_engine_spark.py`: every Cox option, both tie methods; logistic with held providers | Within 1e-9 standard errors |
@@ -250,7 +264,7 @@ providers.
 | Cox robust variance, martingale residuals and standardized ratios equal pprof_py's | Same file: six strata, Breslow | Robust covariance within 1e-6 relative; residuals within 1e-7; expected events within 1e-6 and ratios within 1e-7 |
 | The exact test and direct standardization equal pprof_py's | Same file | p-values within 1e-12 in absolute terms, identical flags; direct ratios and rates within 1e-10. p-values far below 1e-15 are not compared in relative terms |
 
-The repository has 134 tests. In the sandbox of 2026-11-22 (no R installed) 131 pass and the 3
+The repository has 143 tests. In the sandbox of 2026-11-23 (no R installed) 140 pass and the 3
 that need R are skipped.
 
 ### 5.1 Version 0.6 against version 0.5

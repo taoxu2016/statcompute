@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-23, version 0.24.0 (round 26: the cluster's answer on what an evaluation costs, part by part; the
-default without strata and the amended count before a fit on the cluster).
+Updated 2026-11-23, version 0.25.0 (round 27: the Cox kernel adds up the same bits in a third of the memory and, in
+the sandbox, 56 to 66 percent of the time).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass; round 24 has 132, of which 129 pass; round 25 has 134, of which 131 pass; round 26 adds none.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass; round 24 has 132, of which 129 pass; round 25 has 134, of which 131 pass; round 26 adds none; round 27 has 143, of which 140 pass.
 
 ## First cluster run, 2026-11-16
 
@@ -443,9 +443,30 @@ What follows for the main goal is in two new items: the Cox kernel (OI-47: 0.2 t
 centring, and the kernel makes five arrays the size of the features in every evaluation) and the rows (OI-48: 0.45 to
 0.8 seconds of every evaluation bring rows to Python that have not changed).
 
+## Round 27 (2026-11-23): the Cox kernel, the same sums in less memory
+
+The maintainer chose the Cox kernel (OI-47) as the next work. No cluster run since round 26.
+
+The probe had shown the kernel to be half of a Cox evaluation. Reading it for where the time could go: in every call
+it made eleven arrays the size of the rows (the stratum means spread over the rows, the centred rows, the rows times
+the risk scores, their running sums, the sums and the means at the event times and their copies, the rows times the
+expected events), 5.3 times the rows at its peak. None of that is arithmetic.
+
+| Part | State |
+|---|---|
+| `statcompute.engine.kernels.cox_partial` | Makes three such arrays and reuses them. Centres the rows stratum by stratum where strata are large (at once where they are small), and in the caller's own rows when the caller allows it (`overwrite`), which the Spark tasks do. Every floating-point operation is the one it was, in the same order |
+| Evidence that the sums did not change | The kernel of version 0.24.0 is kept, word for word, in `statcompute/lab/cox_kernel_0_24.py`. Every output of the two is identical bit for bit: 6,720 comparisons in the sandbox over shapes, tie methods, weights, offsets, entry times, baseline, rows and robust, and 8 test cases in `tests/test_engine_kernels.py`. The tests against explicit risk sets and against pprof_py pass unchanged |
+| Time and memory, sandbox | One partition of the cluster's shape (125,000 rows, 200 strata), one core, best of seven: 158 ms against 280 at 50 features, 348 against 526 at 100. Peak memory of a call 2.0 and 1.8 times the rows, against 5.4 and 5.3. The prototype's kernel, which does not centre: 226 and 393 ms |
+| For the cluster | The probe has the kind `kernel_before`, the frozen kernel inside the same tasks, and a plan can name the kinds it runs (`pass_kinds`). Plan `cox_kernel_5m_warm`: the two Cox datasets, three repeats, five kinds |
+
+Not done: the two matrix products in their symmetric form (5 to 9 percent of a call more in the sandbox) would change
+the last bits of the information; nothing in this round changes any bit. The logistic kernel and the kernels of the
+fit without strata were not looked at.
+
 ## What has not happened
 
-- Nothing has been done yet about what the probe found: the kernel and the rows are as they were (OI-47, OI-48).
+- The kernel of version 0.25.0 has not run on a cluster: its time inside a task there is not known.
+- Nothing has been done yet about the rows, which are a quarter to a half of an evaluation (OI-48).
 - The layouts without strata were not compared in their coefficients on the cluster: the plan has no reference.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
 - No run of pprof (R) on Databricks.
@@ -456,8 +477,7 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. The Cox kernel in the sandbox (OI-47): centring without the copies, fewer temporaries; then the cluster with the
-   probe. No decision is needed unless what the kernel computes would change.
+1. Run `cox_kernel_5m_warm` on the cluster: 6 probes, about a minute each (OI-47). No restart is needed after pulling.
 2. The rows (OI-48): prior art and a sandbox trial of not sending them again; then a proposal for a decision.
 3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
 4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).

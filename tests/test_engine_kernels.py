@@ -180,3 +180,80 @@ def test_logistic_fit_agrees_with_pprof_py_also_with_providers_at_the_bound(dege
         assert abs(ours["gamma"][11] - (ours["median_gamma"] + 10.0)) < 1e-12
     loglik = (2 * (X.shape[1] + len(gamma)) - theirs.aic_) / 2
     assert abs(ours["loglik"] - loglik) <= 1e-9 * abs(loglik)
+
+
+# ---------------------------------------------------------------- round 27: the same sums in less memory
+def partition(n, strata, p, seed, every_time_an_event=False, far_apart=False):
+    """Rows as a partition of the working set holds them: whole strata, sorted by stratum and time descending."""
+    rng = np.random.default_rng(seed)
+    s = np.sort(rng.integers(0, strata, n))
+    t = np.ceil(rng.exponential(60.0, n)).clip(1, 200)
+    order = np.lexsort((-t, s))
+    s, t = s[order], t[order]
+    X = rng.normal(size=(n, p)) + (5.0 * rng.normal(size=strata)[s][:, None] if far_apart else 0.0)
+    d = np.ones(n) if every_time_an_event else (rng.random(n) < 0.55).astype(np.float64)
+    entry = np.where(rng.random(n) < 0.3, np.maximum(t - rng.integers(1, 30, n), 0.0), -np.inf)
+    return X, t, d, s, rng.normal(0, 0.2, p), rng.uniform(0.5, 2.0, n), rng.normal(0, 0.1, n), entry
+
+
+def same_bits(a, b):
+    assert a.keys() == b.keys()
+    for name in a:
+        if isinstance(a[name], dict):
+            same_bits(a[name], b[name])
+        elif isinstance(a[name], np.ndarray):
+            assert a[name].dtype == b[name].dtype and a[name].tobytes() == b[name].tobytes(), name
+        else:
+            assert a[name] == b[name], name
+
+
+@pytest.mark.parametrize("ties", ["breslow", "efron"])
+@pytest.mark.parametrize("shape", [(3000, 40, 5, False, False), (3000, 1500, 3, False, True), (2500, 9, 4, True, False), (7, 1, 2, False, False)])
+def test_the_kernel_adds_up_the_bits_it_added_up_before_it_reused_its_arrays(ties, shape):
+    """Round 27 (OPEN_ITEMS OI-47): up to version 0.24.0 the kernel made eleven arrays the size of the rows in every call;
+    it now makes three and reuses them. The arithmetic is the same operation for operation, so every output is the same bit
+    for bit as the kernel kept in lab/cox_kernel_0_24.py: with few large strata (centred stratum by stratum) and with many
+    small ones (centred at once), with an event at every time, and with every option."""
+    from statcompute.lab.cox_kernel_0_24 import cox_partial_0_24
+
+    n, strata, p, every, far = shape
+    X, t, d, s, beta, w, o, entry = partition(n, strata, p, seed=n + p, every_time_an_event=every, far_apart=far)
+    for weights, offset, late, extras in ((None, None, None, 0), (w, o, None, 1), (None, None, entry, 2), (w, o, entry, 3)):
+        more = dict(ties=ties, weights=weights, offset=offset, entry=late, baseline=extras in (1, 3), rows=extras in (2, 3),
+                    robust=extras == 3 and ties == "breslow")
+        before = cox_partial_0_24(X, t, d, s, beta, presorted=True, **more)
+        kept = X.copy()
+        same_bits(cox_partial(X, t, d, s, beta, presorted=True, **more), before)
+        assert X.tobytes() == kept.tobytes()                       # rows the kernel was not given stay as they were
+        mine = X.copy()
+        same_bits(cox_partial(mine, t, d, s, beta, presorted=True, overwrite=True, **more), before)
+        centred = X - (np.add.reduceat(X, np.flatnonzero(np.r_[True, s[1:] != s[:-1]]), axis=0)
+                       / np.bincount(s - s.min())[np.unique(s) - s.min()][:, None])[np.cumsum(np.r_[True, s[1:] != s[:-1]]) - 1]
+        assert mine.tobytes() == centred.tobytes()                 # given the rows, it centres them where they lie
+        locked = X.copy()
+        locked.flags.writeable = False                             # as a single Arrow batch arrives: not to be written to
+        same_bits(cox_partial(locked, t, d, s, beta, presorted=True, overwrite=True, **more), before)
+        single = X.astype(np.float32)
+        same_bits(cox_partial(single, t, d, s, beta, presorted=True, overwrite=True, **more),
+                  cox_partial_0_24(single, t, d, s, beta, presorted=True, **more))
+        assert single.dtype == np.float32 and single.tobytes() == X.astype(np.float32).tobytes()
+        mixed = np.random.default_rng(1).permutation(n)
+        there = dict(more, weights=None if weights is None else weights[mixed], offset=None if offset is None else offset[mixed],
+                     entry=None if late is None else late[mixed], order=np.arange(n, dtype=float)[mixed])
+        same_bits(cox_partial(X[mixed], t[mixed], d[mixed], s[mixed], beta, **there),
+                  cox_partial_0_24(X[mixed], t[mixed], d[mixed], s[mixed], beta, **there))
+
+
+def test_subtracting_group_by_group_gives_the_bits_of_subtracting_at_once():
+    from statcompute.engine.kernels import _less
+
+    rng = np.random.default_rng(5)
+    for n, groups in ((4000, 7), (4000, 3000), (1, 1)):
+        codes = np.sort(rng.integers(0, groups, n))
+        first = np.r_[True, codes[1:] != codes[:-1]]
+        start, sid = np.flatnonzero(first), np.cumsum(first) - 1
+        stop = np.r_[start[1:], n]
+        values, parts = rng.normal(size=(n, 3)), rng.normal(size=(len(start), 3))
+        plain = values - parts[sid]
+        assert _less(values, parts, sid, start, stop, np.empty((n, 3))).tobytes() == plain.tobytes()
+        assert _less(values.copy(), parts, sid, start, stop).tobytes() == plain.tobytes()          # in the array itself
