@@ -62,6 +62,11 @@ def test_a_plan_runs_the_probe_and_the_report_shows_what_a_pass_costs(spark, tmp
     kernel = next(row for row in rows if row["kind"] == "kernel" and row["model"].startswith("cox"))
     assert kernel["passes"] == 2 and kernel["tasks"] == cox["fit"]["extras"]["partitions"] and kernel["kernel_s"] is not None
     assert kernel["around_tasks_s"] is not None and kernel["median_s"] >= kernel["slowest_task_s"]
+    # the report says whether two kernels added up the same log-likelihood: the kernel of version 0.24.0 to the bit
+    beside = {row["kind"]: row["log_likelihood_vs_kernel"] for row in rows if row["model"].startswith("cox")}
+    assert beside["kernel_before"] == "the same bits" and beside["kernel"] is None and beside["rows"] is None
+    assert beside["kernel_plain"] == "the same bits" or float(beside["kernel_plain"]) < 1e-9
+    assert beside["evaluation"] == "the same bits" or float(beside["evaluation"]) < 1e-12
     job = next(row for row in rows if row["kind"] == "job")
     assert job["tasks"] is None and job["around_tasks_s"] is None and job["median_s"] > 0
     text = render(records, "lab_numpy")

@@ -71,7 +71,9 @@ def render(records: List[Dict[str, Any]], reference: str = "pprof_py", title: st
                  "passes as the driver saw them. The other columns come from the tasks, each the median over the passes: "
                  "`task_s` and `slowest_task_s` are a task's own seconds from its first line to its last, `receive_s` the "
                  "part until its rows were stacked, `kernel_s` and `slowest_kernel_s` the part in the kernel. "
-                 "`around_tasks_s` is a pass's seconds less its slowest task's: what the job costs outside its tasks.\n",
+                 "`around_tasks_s` is a pass's seconds less its slowest task's: what the job costs outside its tasks. "
+                 "`log_likelihood_vs_kernel` sets the log-likelihood a kind's last pass added up beside the `kernel` "
+                 "kind's: the same bits, or their relative difference.\n",
                  to_markdown(pass_costs(records))]),
              f"## Numerical agreement with {reference}\n",
              "Only rows with `like_for_like` true compare implementations that fit exactly the same model. Every run is "

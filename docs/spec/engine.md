@@ -55,7 +55,8 @@ the event times. Rows are centred stratum by stratum where strata are large. Eve
 operation is the one it was, in the same order, so the sums are the same bit for bit; the kernel of
 version 0.24.0 is kept in `statcompute/lab/cox_kernel_0_24.py` to hold it to that. In the sandbox,
 on one partition of the cluster's shape, a call takes 56 percent of the time it took at 50 features
-and 66 percent at 100, and its peak is 2.0 and 1.8 times the rows.
+and 66 percent at 100, and its peak is 2.0 and 1.8 times the rows. On the cluster, inside the same
+tasks, it takes 57 to 60 percent (`docs/reports/2026-11-23-databricks-cox-kernel.md`).
 
 ### 2.1 With strata: whole strata in a partition
 

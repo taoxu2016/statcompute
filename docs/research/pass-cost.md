@@ -154,3 +154,10 @@ the information; not done. On the cluster the kernels took about 2.5 times what 
 what this is worth there is for the probe to say: plan `cox_kernel_5m_warm` runs both versions and
 the prototype's inside the same tasks.
 
+**On the cluster (2026-11-23).** Inside the same tasks, 125,000 rows each
+(`docs/reports/2026-11-23-databricks-cox-kernel.md`): the kernel of version 0.24.0 took 0.72 to 0.75
+seconds at 50 features and 1.54 to 1.60 at 100; the kernel of version 0.25.0 takes 0.43 and 0.90 to
+0.94, which is 57 to 60 percent; the prototype's 0.56 and 1.20. The sandbox's 56 and 66 percent
+were a fair indication at 50 features and too cautious at 100, where the kernel before suffered
+most in its slowest tasks. A Cox evaluation is 0.33 to 0.39 and 0.87 to 0.98 seconds shorter.
+

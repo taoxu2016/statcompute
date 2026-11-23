@@ -1,7 +1,7 @@
 # Status
 
-Updated 2026-11-23, version 0.25.0 (round 27: the Cox kernel adds up the same bits in a third of the memory and, in
-the sandbox, 56 to 66 percent of the time).
+Updated 2026-11-23, version 0.26.0 (round 28: on the cluster the Cox kernel of version 0.25.0 takes 57 to 60 percent
+of the time of the one before, and a Cox evaluation is 0.3 to 1.0 seconds shorter).
 
 ## What exists
 
@@ -25,7 +25,7 @@ pprof_py 0.7.0 and pprof 2.0.12 installed from exported copies of their pinned c
 pass in about 80 seconds (29 since round 3, 66 since round 5, 96 since round 6, 102 since round 8, 103 since round 9, 104 since round 10, in about three minutes).
 Rounds 12 to 15 ran in another sandbox of the same kind without R, with 4 GB of memory: 114 tests since round 13, 115
 since round 14 117 since round 15 and 119 since round 16, of which 116 pass and the 3 that need R are skipped, in about five minutes.
-Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass; round 24 has 132, of which 129 pass; round 25 has 134, of which 131 pass; round 26 adds none; round 27 has 143, of which 140 pass.
+Round 17 added none; round 18 has 120, of which 117 pass; round 19 has 122, of which 119 pass; round 20 has 125, of which 122 pass. Round 21 added none; round 22 has 126, of which 123 pass; round 23 has 130, of which 127 pass; round 24 has 132, of which 129 pass; round 25 has 134, of which 131 pass; round 26 adds none; round 27 has 143, of which 140 pass; round 28 adds none.
 
 ## First cluster run, 2026-11-16
 
@@ -463,9 +463,32 @@ Not done: the two matrix products in their symmetric form (5 to 9 percent of a c
 the last bits of the information; nothing in this round changes any bit. The logistic kernel and the kernels of the
 fit without strata were not looked at.
 
+## Round 28 (2026-11-23): the kernel on the cluster
+
+The maintainer applied round 27 and ran `cox_kernel_5m_warm` with version 0.25.0: six probes, each running the kernel
+before and the kernel now inside the same tasks (`docs/reports/2026-11-23-databricks-cox-kernel.md`).
+
+| Per task of 125,000 rows, seconds in the kernel | Before | Now | The prototype's |
+|---|---:|---:|---:|
+| 50 features | 0.72 to 0.75 | 0.43 | 0.56 |
+| 100 features | 1.54 to 1.60 | 0.90 to 0.94 | 1.20 to 1.21 |
+
+- The kernel takes 57 to 60 percent of what it took, and its slowest task at 100 features half of what it took.
+- A Cox evaluation is 0.33 to 0.39 seconds shorter at 50 features (1.31 to 1.48 seconds) and 0.87 to 0.98 shorter at
+  100 (2.26 to 2.38).
+- The kernel that centres is now a quarter faster than the prototype's that does not (OI-35).
+- The cluster took 7 to 18 minutes to give its executors before every probe: 73 minutes of waiting for seven minutes of
+  probes. For a plan that times kernels inside tasks the waiting buys nothing; such plans will not hold the cluster.
+
+Round 28 changes one thing in the code: the report's table of what a pass costs says whether a kernel added up the same
+log-likelihood as the engine's, to the bit (`log_likelihood_vs_kernel`). The records of the session hold what it needs.
+
 ## What has not happened
 
-- The kernel of version 0.25.0 has not run on a cluster: its time inside a task there is not known.
+- The cluster has not said whether the two kernels add up the same bits there; the sandbox says they do. Rendering the
+  session again with version 0.26.0 shows it.
+- No fit with the kernel of version 0.25.0 has run on a cluster.
+- The logistic kernel and the passes without strata have not been read as the Cox kernel was (OI-49).
 - Nothing has been done yet about the rows, which are a quarter to a half of an evaluation (OI-48).
 - The layouts without strata were not compared in their coefficients on the cluster: the plan has no reference.
 - No run at 180 features or above 5 million rows; the maintainer has set those aside for now.
@@ -477,11 +500,13 @@ The repository is at https://github.com/taoxu2016/statcompute and decisions D-01
 
 The maintainer's direction of 2026-11-16: work within autoscaling, no larger sizes for now, and the main goal first, which is the faster implementation.
 
-1. Run `cox_kernel_5m_warm` on the cluster: 6 probes, about a minute each (OI-47). No restart is needed after pulling.
-2. The rows (OI-48): prior art and a sandbox trial of not sending them again; then a proposal for a decision.
-3. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
-4. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
-5. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20); the open limits
+1. No new run: render `cox_kernel_5m_warm` again with `versions` = `0.25.0` for the column that sets the two kernels'
+   log-likelihoods beside each other (OI-47). Then the frozen kernel goes.
+2. The other kernels, read as the Cox kernel was (OI-49): sandbox first, then the probe.
+3. The rows (OI-48): prior art and a sandbox trial of not sending them again; then a proposal for a decision.
+4. Send RI-1 to pprof_py's maintainers (D-12); the text is in `docs/reference-reports/`.
+5. Read pprof_spark's Cox and logistic fits again at the pinned commit (OI-37).
+6. The remaining Newton step in the harness (D-09, OI-34); the outputs the engine still lacks (OI-20); the open limits
    of D-21 (OI-41, OI-42).
 
 Prior-art search done on 2026-11-17 (`docs/research/prior-art-time-grid.md`): no new estimator or identity; the algebra is

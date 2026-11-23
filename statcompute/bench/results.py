@@ -273,7 +273,10 @@ def pass_costs(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     and from the tasks themselves, each the median over the passes: the median and the largest of
     a task's own seconds, the median of those it spent receiving and stacking its rows, and the
     median and the largest of those in the kernel. `around_tasks_s` is the median over the passes
-    of a pass's seconds less its slowest task's: what the job costs outside its tasks."""
+    of a pass's seconds less its slowest task's: what the job costs outside its tasks.
+    `log_likelihood_vs_kernel` sets the log-likelihood a kind's last pass added up beside that of
+    the `kernel` kind: "the same bits", or their relative difference. It is how a cluster says
+    whether two kernels add up the same sums."""
     middle = lambda values: None if not values else round(statistics.median(values), 2)   # noqa: E731
     out = []
     for r in records:
@@ -282,6 +285,16 @@ def pass_costs(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         during = (r.get("environment") or {}).get("during") or {}
         low, high = during.get("executors_min"), during.get("executors_max")
+        values = dict(extras.get("kernel_values") or {}, evaluation=extras.get("value"))
+        mark = values.get("kernel")
+
+        def beside(kind):
+            if kind == "kernel" or mark is None or values.get(kind) is None:
+                return None
+            if values[kind] == mark:
+                return "the same bits"
+            return f"{abs(values[kind] - mark) / abs(mark):.1e}" if mark else None
+
         for kind in extras.get("pass_kinds") or list(extras["ladder"]):
             found = extras["ladder"][kind]
             seconds, slowest = found.get("seconds") or [], found.get("task_max_s") or []
@@ -293,6 +306,7 @@ def pass_costs(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         "receive_s": middle(found.get("receive_median_s")), "kernel_s": middle(found.get("kernel_median_s")),
                         "slowest_kernel_s": middle(found.get("kernel_max_s")),
                         "around_tasks_s": middle([s - t for s, t in zip(seconds, slowest)]) if len(slowest) == len(seconds) else None,
+                        "log_likelihood_vs_kernel": beside(kind),
                         "cores": "-".join(str(c) for c in sorted(set(found.get("cores") or []))[::max(1, len(set(found.get("cores") or [])) - 1)])})
     return out
 
